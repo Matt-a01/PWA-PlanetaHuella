@@ -1,4 +1,26 @@
+# Dependencias y compilación
 node_modules/
 dist/
+dist-ssr/
+
+# Variables de entorno y configuraciones locales
 .env
+*.local
+
+# Logs
+logs/
+*.log
+
+# Archivos del sistema operativo
 .DS_Store
+Thumbs.db
+
+# Editores de código (VS Code, JetBrains/WebStorm y otros)
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
