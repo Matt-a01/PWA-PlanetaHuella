@@ -1,0 +1,13 @@
+# render.yaml
+services:
+  - type: web
+    name: planeta-huella-frontend
+    env: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/dist
+    # Esta regla de reescritura es vital para que React Router funcione correctamente 
+    # si actualizas la página desde el navegador.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
