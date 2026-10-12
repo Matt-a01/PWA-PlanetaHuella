@@ -8,6 +8,9 @@ import Mascotas from './pages/Mascotas';
 import Recomendaciones from './pages/Recomendaciones';
 import Razas from './pages/Razas';
 import Perfil from './pages/Perfil';
+import PerfilMascota from './pages/PerfilMascota';
+import Registro from './pages/Registro';
+import AgregarMascota from './pages/AgregarMascota';
 
 export default function App() {
   return (
@@ -16,13 +19,16 @@ export default function App() {
       <div className="min-h-screen bg-[#F8FAFC] font-sans">
         <Routes>
           <Route path="/inicio" element={<Inicio />} />
+          <Route path="/Registro" element={<Registro />} />
+          <Route path="/AgregarMascota" element={<AgregarMascota />} />
           <Route path="/mascotas" element={<Mascotas />} />
           <Route path="/recomendaciones" element={<Recomendaciones />} />
           <Route path="/razas" element={<Razas />} />
           <Route path="/perfil" element={<Perfil />} />
+          <Route path="/mascota/:id" element={<PerfilMascota />} />
         </Routes>
         
-        {/* La barra se coloca fuera de <Routes> para que sea visible en todas las páginas */}
+
         <BottomNav />
       </div>
     </BrowserRouter>
