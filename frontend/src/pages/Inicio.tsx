@@ -1,5 +1,4 @@
 // src/pages/Inicio.tsx
-import React from 'react';
 import { Plus, Bone, Droplet, Footprints, Scissors } from 'lucide-react';
 import PetCard from '../components/PetCard';
 import TaskItem from '../components/TaskItem';
