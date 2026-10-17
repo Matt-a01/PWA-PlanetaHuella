@@ -1,100 +1,181 @@
 // backend/src/routes/auth.routes.ts
-import express from 'express';
+import express, { type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'secreto_planeta_huella';
+const JWT_SECRET = process.env.JWT_SECRET || 'secret_planeta_huella_2026';
 
-// POST /api/auth/register - Registrar un nuevo usuario
-router.post('/register', async (req, res) => {
+// ==========================================
+// REGISTRO DE USUARIO: POST /api/auth/register
+// ==========================================
+router.post('/register', async (req: Request, res: Response): Promise<void> => {
     try {
         const { fullName, email, password } = req.body;
 
+        // Validaciones básicas
         if (!fullName || !email || !password) {
-            res.status(400).json({ ok: false, error: 'Todos los campos son obligatorios.' });
+            res.status(400).json({ 
+                ok: false, 
+                error: 'Todos los campos son obligatorios (nombre, correo y contraseña).' 
+            });
             return;
         }
 
-        // Verificar si el correo ya existe
-        const usuarioExistente = await User.findOne({ email: email.toLowerCase().trim() });
-        if (usuarioExistente) {
-            res.status(400).json({ ok: false, error: 'Este correo ya está registrado.' });
+        if (password.length < 6) {
+            res.status(400).json({ 
+                ok: false, 
+                error: 'La contraseña debe tener al menos 6 caracteres.' 
+            });
             return;
         }
 
-        // Encriptar la contraseña
+        const normalizedEmail = email.trim().toLowerCase();
+
+        // Verificar si el usuario ya existe
+        const existingUser = await User.findOne({ email: normalizedEmail });
+        if (existingUser) {
+            res.status(409).json({ 
+                ok: false, 
+                error: 'Este correo electrónico ya está registrado. Por favor inicia sesión.' 
+            });
+            return;
+        }
+
+        // Hashear contraseña
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Crear usuario en MongoDB
-        const nuevoUsuario = await User.create({
+        // Guardar nuevo usuario en MongoDB Atlas
+        const newUser = await User.create({
             fullName: fullName.trim(),
-            email: email.toLowerCase().trim(),
+            email: normalizedEmail,
             password: hashedPassword
         });
 
-        // Generar token JWT básico
-        const token = jwt.sign({ id: nuevoUsuario._id, email: nuevoUsuario.email }, JWT_SECRET, {
-            expiresIn: '7d'
-        });
+        // Crear token JWT
+        const token = jwt.sign(
+            { id: newUser._id, email: newUser.email },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
 
         res.status(201).json({
             ok: true,
-            message: 'Usuario registrado correctamente',
+            message: '¡Usuario registrado exitosamente!',
             user: {
-                id: nuevoUsuario._id,
-                fullName: nuevoUsuario.fullName,
-                email: nuevoUsuario.email
+                id: newUser._id,
+                fullName: newUser.fullName,
+                email: newUser.email,
+                createdAt: newUser.createdAt
             },
             token
         });
-    } catch (error) {
-        console.error('Error en registro:', error);
-        res.status(500).json({ ok: false, error: 'Error al registrar el usuario.' });
+    } catch (error: any) {
+        console.error('Error al registrar usuario:', error);
+        res.status(500).json({ 
+            ok: false, 
+            error: 'Error interno del servidor al procesar el registro.' 
+        });
     }
 });
 
-// POST /api/auth/login - Iniciar sesión
-router.post('/login', async (req, res) => {
+// ==========================================
+// INICIO DE SESIÓN: POST /api/auth/login
+// ==========================================
+router.post('/login', async (req: Request, res: Response): Promise<void> => {
     try {
         const { email, password } = req.body;
 
         if (!email || !password) {
-            res.status(400).json({ ok: false, error: 'Ingresa tu correo y contraseña.' });
+            res.status(400).json({ 
+                ok: false, 
+                error: 'Por favor ingresa tu correo y contraseña.' 
+            });
             return;
         }
 
-        const usuario = await User.findOne({ email: email.toLowerCase().trim() });
-        if (!usuario) {
-            res.status(401).json({ ok: false, error: 'Correo o contraseña incorrectos.' });
+        const normalizedEmail = email.trim().toLowerCase();
+
+        // Buscar el usuario por email
+        const user = await User.findOne({ email: normalizedEmail });
+        if (!user) {
+            res.status(401).json({ 
+                ok: false, 
+                error: 'Credenciales inválidas. Correo o contraseña incorrectos.' 
+            });
             return;
         }
 
-        const passwordValida = await bcrypt.compare(password, usuario.password);
-        if (!passwordValida) {
-            res.status(401).json({ ok: false, error: 'Correo o contraseña incorrectos.' });
+        // Comparar contraseña hasheada
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            res.status(401).json({ 
+                ok: false, 
+                error: 'Credenciales inválidas. Correo o contraseña incorrectos.' 
+            });
             return;
         }
 
-        const token = jwt.sign({ id: usuario._id, email: usuario.email }, JWT_SECRET, {
-            expiresIn: '7d'
-        });
+        // Generar token JWT
+        const token = jwt.sign(
+            { id: user._id, email: user.email },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
 
-        res.json({
+        res.status(200).json({
             ok: true,
-            message: 'Inicio de sesión exitoso',
+            message: '¡Bienvenido de vuelta!',
             user: {
-                id: usuario._id,
-                fullName: usuario.fullName,
-                email: usuario.email
+                id: user._id,
+                fullName: user.fullName,
+                email: user.email,
+                createdAt: user.createdAt
             },
             token
         });
-    } catch (error) {
-        console.error('Error en login:', error);
-        res.status(500).json({ ok: false, error: 'Error al iniciar sesión.' });
+    } catch (error: any) {
+        console.error('Error al iniciar sesión:', error);
+        res.status(500).json({ 
+            ok: false, 
+            error: 'Error interno del servidor al procesar el inicio de sesión.' 
+        });
+    }
+});
+
+// ==========================================
+// VERIFICAR SESIÓN / PERFIL: GET /api/auth/me
+// ==========================================
+router.get('/me', async (req: Request, res: Response): Promise<void> => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            res.status(401).json({ ok: false, error: 'Token no proporcionado.' });
+            return;
+        }
+
+        const token = authHeader.split(' ')[1] || '';
+        const decoded: any = jwt.verify(token, JWT_SECRET);
+
+        const user = await User.findById(decoded.id).select('-password');
+        if (!user) {
+            res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+            return;
+        }
+
+        res.status(200).json({
+            ok: true,
+            user: {
+                id: user._id,
+                fullName: user.fullName,
+                email: user.email,
+                createdAt: user.createdAt
+            }
+        });
+    } catch {
+        res.status(401).json({ ok: false, error: 'Token inválido o expirado.' });
     }
 });
 

@@ -5,6 +5,7 @@ export interface User {
   id: string;
   fullName: string;
   email: string;
+  createdAt?: string;
 }
 
 interface AuthState {
@@ -15,6 +16,7 @@ interface AuthState {
   logout: () => void;
 }
 
+// Cargar estado inicial desde localStorage para persistencia de sesión
 const savedUser = localStorage.getItem('ph_user');
 const savedToken = localStorage.getItem('ph_token');
 
@@ -23,7 +25,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: savedToken || null,
   isAuthenticated: !!savedToken,
 
-  login: (user, token) => {
+  login: (user: User, token: string) => {
     localStorage.setItem('ph_user', JSON.stringify(user));
     localStorage.setItem('ph_token', token);
     set({ user, token, isAuthenticated: true });
