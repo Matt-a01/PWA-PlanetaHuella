@@ -1,7 +1,15 @@
 // frontend/src/store/usePetStore.ts
 import { create } from 'zustand';
 
-const API_BASE = 'http://localhost:3000/api';
+const isLocalhost =
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+const rawEnvUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim().replace(/\/$/, '');
+const API_BASE = rawEnvUrl
+  ? rawEnvUrl.replace(/\/api\/auth$/, '/api').replace(/(?<!\/api)$/, '/api')
+  : isLocalhost
+    ? 'http://localhost:3000/api'
+    : '';
 
 export interface Pet {
   _id: string;
@@ -64,6 +72,7 @@ export const usePetStore = create<PetState>((set, get) => ({
   tasks: tareasIniciales,
 
   cargarDatos: async (ownerId?: string) => {
+    if (!API_BASE) return;
     try {
       const query = ownerId ? `?ownerId=${ownerId}` : '';
       const [resPets, resTasks] = await Promise.all([
@@ -86,20 +95,22 @@ export const usePetStore = create<PetState>((set, get) => ({
   },
 
   agregarMascota: async (nueva, ownerId) => {
-    try {
-      const response = await fetch(`${API_BASE}/pets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...nueva, ownerId: ownerId || '000000000000000000000001' }),
-      });
-      const data = await response.json();
-      if (data.ok && data.pet) {
-        set({ pets: [...get().pets, data.pet] });
-        await get().cargarDatos(ownerId);
-        return;
+    if (API_BASE) {
+      try {
+        const response = await fetch(`${API_BASE}/pets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...nueva, ownerId: ownerId || '000000000000000000000001' }),
+        });
+        const data = await response.json();
+        if (data.ok && data.pet) {
+          set({ pets: [...get().pets, data.pet] });
+          await get().cargarDatos(ownerId);
+          return;
+        }
+      } catch {
+        // Respaldo local en caso de estar sin servidor
       }
-    } catch {
-      // Respaldo local en caso de estar sin servidor
     }
 
     const mascotaLocal: Pet = { ...nueva, _id: String(Date.now()) };
@@ -107,10 +118,12 @@ export const usePetStore = create<PetState>((set, get) => ({
   },
 
   eliminarMascota: async (id) => {
-    try {
-      await fetch(`${API_BASE}/pets/${id}`, { method: 'DELETE' });
-    } catch {
-      // Continúa borrado en cliente
+    if (API_BASE) {
+      try {
+        await fetch(`${API_BASE}/pets/${id}`, { method: 'DELETE' });
+      } catch {
+        // Continúa borrado en cliente
+      }
     }
     set({ pets: get().pets.filter((p) => p._id !== id) });
   },
@@ -122,10 +135,12 @@ export const usePetStore = create<PetState>((set, get) => ({
       ),
     });
 
-    try {
-      await fetch(`${API_BASE}/tasks/${id}`, { method: 'PATCH' });
-    } catch {
-      // Se mantiene el cambio en la interfaz
+    if (API_BASE) {
+      try {
+        await fetch(`${API_BASE}/tasks/${id}`, { method: 'PATCH' });
+      } catch {
+        // Se mantiene el cambio en la interfaz
+      }
     }
   },
 }));
