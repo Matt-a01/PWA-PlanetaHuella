@@ -7,16 +7,20 @@ interface TaskItemProps {
     petName: string;
     icon: React.ReactNode;
     iconBgColor: string;
+    isCompleted?: boolean;
+    onToggle?: () => void;
 }
 
-export default function TaskItem({ taskName, petName, icon, iconBgColor }: TaskItemProps) {
+export default function TaskItem({ taskName, petName, icon, iconBgColor, isCompleted = false, onToggle }: TaskItemProps) {
     return (
         <div className="flex items-center justify-between bg-white p-3 rounded-2xl mb-3 shadow-sm border border-gray-100">
         <div className="flex items-center gap-3">
             {/* Casilla de verificación (checkbox) */}
             <input 
             type="checkbox" 
-            className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+            checked={isCompleted}
+            onChange={onToggle}
+            className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
             />
             
             {/* Ícono de la tarea con color de fondo dinámico */}
@@ -26,7 +30,7 @@ export default function TaskItem({ taskName, petName, icon, iconBgColor }: TaskI
             
             {/* Textos de la tarea */}
             <div>
-            <p className="font-semibold text-gray-800 text-sm">{taskName}</p>
+            <p className={`font-semibold text-sm ${isCompleted ? 'line-through text-gray-400' : 'text-gray-800'}`}>{taskName}</p>
             <p className="text-xs text-gray-500">{petName}</p>
             </div>
         </div>

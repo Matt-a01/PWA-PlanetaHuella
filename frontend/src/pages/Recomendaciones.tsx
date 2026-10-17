@@ -1,27 +1,49 @@
-// src/pages/recomendaciones.tsx
+// src/pages/Recomendaciones.tsx
+import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { usePetStore } from '../store/usePetStore';
 
-export default function recomendaciones() {
+export default function Recomendaciones() {
+    const pets = usePetStore((state) => state.pets);
+    const [mascotaActiva, setMascotaActiva] = useState(0);
+
     const tips = [
-        { title: "Rutina de ejercicio", desc: "Ideal para su raza" },
-        { title: "Cuidado del pelaje", desc: "Mantén su pelaje sano y brillante" },
-        { title: "Salud dental", desc: "Previene problemas futuros" },
+        { title: 'Rutina de ejercicio', desc: 'Ideal para su raza' },
+        { title: 'Cuidado del pelaje', desc: 'Mantén su pelaje sano y brillante' },
+        { title: 'Salud dental', desc: 'Previene problemas futuros' },
     ];
+
+    const mascota = pets[mascotaActiva] || {
+        name: 'Luna',
+        imageUrl: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=150&q=80',
+    };
 
     return (
         <div className="min-h-screen bg-[#F8FAFC] pb-24 p-5">
         <h1 className="text-2xl font-bold text-gray-900 mb-6 pt-2">Recomendaciones</h1>
         
-        {/* Pestañas */}
+        {/* Pestañas por mascota */}
         <div className="flex w-full justify-start border-b border-gray-200 mb-6">
-            <button className="pb-2 px-4 text-green-700 font-semibold border-b-2 border-green-700">Para Luna</button>
-            <button className="pb-2 px-4 text-gray-400 font-medium">Para Milo</button>
+            {pets.map((pet, idx) => (
+                <button
+                    key={pet._id}
+                    type="button"
+                    onClick={() => setMascotaActiva(idx)}
+                    className={`pb-2 px-4 ${
+                        mascotaActiva === idx
+                            ? 'text-green-700 font-semibold border-b-2 border-green-700'
+                            : 'text-gray-400 font-medium'
+                    }`}
+                >
+                    Para {pet.name}
+                </button>
+            ))}
         </div>
 
         {/* Tarjeta destacada */}
-        <h2 className="text-gray-900 font-bold mb-3">Recomendado para Luna</h2>
+        <h2 className="text-gray-900 font-bold mb-3">Recomendado para {mascota.name}</h2>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex gap-4 mb-8">
-            <img src="https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=150&q=80" alt="Luna" className="w-24 h-24 object-cover rounded-xl" />
+            <img src={mascota.imageUrl} alt={mascota.name} className="w-24 h-24 object-cover rounded-xl" />
             <div className="flex flex-col justify-between">
             <div>
                 <h3 className="font-bold text-sm text-gray-900">Alimentación saludable para su edad</h3>
