@@ -19,6 +19,7 @@ export interface Pet {
   age: number;
   gender: string;
   imageUrl: string;
+  ownerId?: string;
 }
 
 export interface Task {
@@ -58,12 +59,33 @@ const tareasIniciales: Task[] = [
   { _id: 't4', title: 'Cepillar', isCompleted: false, iconType: 'scissors', petId: { _id: 'luna', name: 'Luna' } },
 ];
 
+// Funciones auxiliares para guardar por usuario en caso de respaldo local
+const obtenerClaveUsuario = (ownerId?: string) => `planeta_huella_pets_${ownerId || 'invitado'}`;
+
+const leerMascotasUsuario = (ownerId?: string): Pet[] | null => {
+  try {
+    const guardado = localStorage.getItem(obtenerClaveUsuario(ownerId));
+    return guardado ? JSON.parse(guardado) : null;
+  } catch {
+    return null;
+  }
+};
+
+const guardarMascotasUsuario = (pets: Pet[], ownerId?: string) => {
+  try {
+    localStorage.setItem(obtenerClaveUsuario(ownerId), JSON.stringify(pets));
+  } catch {
+    // Ignorar error de cuota si ocurre
+  }
+};
+
 interface PetState {
   pets: Pet[];
   tasks: Task[];
   cargarDatos: (ownerId?: string) => Promise<void>;
   agregarMascota: (nueva: Omit<Pet, '_id'>, ownerId?: string) => Promise<void>;
-  eliminarMascota: (id: string) => Promise<void>;
+  actualizarMascota: (id: string, datos: Omit<Pet, '_id'>, ownerId?: string) => Promise<void>;
+  eliminarMascota: (id: string, ownerId?: string) => Promise<void>;
   toggleTarea: (id: string) => Promise<void>;
 }
 
@@ -72,6 +94,11 @@ export const usePetStore = create<PetState>((set, get) => ({
   tasks: tareasIniciales,
 
   cargarDatos: async (ownerId?: string) => {
+    const guardadasLocal = leerMascotasUsuario(ownerId);
+    if (guardadasLocal && guardadasLocal.length > 0) {
+      set({ pets: guardadasLocal });
+    }
+
     if (!API_BASE) return;
     try {
       const query = ownerId ? `?ownerId=${ownerId}` : '';
@@ -85,26 +112,31 @@ export const usePetStore = create<PetState>((set, get) => ({
 
       if (dataPets.ok && dataPets.pets.length > 0) {
         set({ pets: dataPets.pets });
+        guardarMascotasUsuario(dataPets.pets, ownerId);
       }
       if (dataTasks.ok && dataTasks.tasks.length > 0) {
         set({ tasks: dataTasks.tasks });
       }
     } catch {
-      // Si el backend no está activo, se mantienen las mascotas de ejemplo en memoria
+      // Si el backend no está activo, se mantienen las mascotas del usuario actual
     }
   },
 
   agregarMascota: async (nueva, ownerId) => {
+    const idUsuario = ownerId || '000000000000000000000001';
+
     if (API_BASE) {
       try {
         const response = await fetch(`${API_BASE}/pets`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...nueva, ownerId: ownerId || '000000000000000000000001' }),
+          body: JSON.stringify({ ...nueva, ownerId: idUsuario }),
         });
         const data = await response.json();
         if (data.ok && data.pet) {
-          set({ pets: [...get().pets, data.pet] });
+          const nuevaLista = [...get().pets, data.pet];
+          set({ pets: nuevaLista });
+          guardarMascotasUsuario(nuevaLista, ownerId);
           await get().cargarDatos(ownerId);
           return;
         }
@@ -113,11 +145,44 @@ export const usePetStore = create<PetState>((set, get) => ({
       }
     }
 
-    const mascotaLocal: Pet = { ...nueva, _id: String(Date.now()) };
-    set({ pets: [...get().pets, mascotaLocal] });
+    const mascotaLocal: Pet = { ...nueva, _id: String(Date.now()), ownerId: idUsuario };
+    const nuevaLista = [...get().pets, mascotaLocal];
+    set({ pets: nuevaLista });
+    guardarMascotasUsuario(nuevaLista, ownerId);
   },
 
-  eliminarMascota: async (id) => {
+  actualizarMascota: async (id, datos, ownerId) => {
+    const idUsuario = ownerId || '000000000000000000000001';
+
+    if (API_BASE) {
+      try {
+        const response = await fetch(`${API_BASE}/pets/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...datos, ownerId: idUsuario }),
+        });
+        const data = await response.json();
+        if (data.ok && data.pet) {
+          // Reemplazamos la mascota (y su foto anterior) en la lista
+          const listaActualizada = get().pets.map((p) => (p._id === id ? data.pet : p));
+          set({ pets: listaActualizada });
+          guardarMascotasUsuario(listaActualizada, ownerId);
+          return;
+        }
+      } catch {
+        // Continúa actualización en cliente
+      }
+    }
+
+    // Reemplaza la imagen anterior directamente sobre el registro existente
+    const listaActualizada = get().pets.map((p) =>
+      p._id === id ? { ...p, ...datos, _id: id, ownerId: idUsuario } : p
+    );
+    set({ pets: listaActualizada });
+    guardarMascotasUsuario(listaActualizada, ownerId);
+  },
+
+  eliminarMascota: async (id, ownerId) => {
     if (API_BASE) {
       try {
         await fetch(`${API_BASE}/pets/${id}`, { method: 'DELETE' });
@@ -125,7 +190,9 @@ export const usePetStore = create<PetState>((set, get) => ({
         // Continúa borrado en cliente
       }
     }
-    set({ pets: get().pets.filter((p) => p._id !== id) });
+    const listaFiltrada = get().pets.filter((p) => p._id !== id);
+    set({ pets: listaFiltrada });
+    guardarMascotasUsuario(listaFiltrada, ownerId);
   },
 
   toggleTarea: async (id) => {

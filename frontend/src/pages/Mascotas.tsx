@@ -58,7 +58,7 @@ export default function Mascotas() {
                                 type="button"
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    navigate(`/mascota/${pet._id}`);
+                                    navigate(`/AgregarMascota?id=${pet._id}`);
                                 }}
                                 className="p-2 text-gray-400 hover:text-green-700"
                             >
@@ -68,7 +68,7 @@ export default function Mascotas() {
                                 type="button"
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    eliminarMascota(pet._id);
+                                    eliminarMascota(pet._id, user?.id);
                                 }}
                                 className="p-2 text-red-400 hover:text-red-600"
                             >
