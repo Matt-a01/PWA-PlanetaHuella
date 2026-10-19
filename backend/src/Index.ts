@@ -11,9 +11,9 @@ import catalogRoutes from './routes/catalog.routes.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares básicos
+// Middlewares básicos (límite ampliado a 5mb para permitir subida de imágenes)
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // Iniciar la conexión a la base de datos MongoDB Atlas
 conectarDB();
