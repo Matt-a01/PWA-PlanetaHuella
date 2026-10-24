@@ -1,4 +1,3 @@
-// frontend/src/store/usePetStore.ts
 import { create } from 'zustand';
 
 const isLocalhost =
@@ -30,7 +29,6 @@ export interface Task {
   petId: { _id: string; name: string } | string;
 }
 
-// Datos de muestra por defecto si aún no hay registros en la base de datos
 const mascotasIniciales: Pet[] = [
   {
     _id: 'luna',
@@ -59,7 +57,7 @@ const tareasIniciales: Task[] = [
   { _id: 't4', title: 'Cepillar', isCompleted: false, iconType: 'scissors', petId: { _id: 'luna', name: 'Luna' } },
 ];
 
-// Funciones auxiliares para guardar por usuario en caso de respaldo local
+// Almacenamiento local aislado por usuario como respaldo cuando no hay conexión con el servidor
 const obtenerClaveUsuario = (ownerId?: string) => `planeta_huella_pets_${ownerId || 'invitado'}`;
 
 const leerMascotasUsuario = (ownerId?: string): Pet[] | null => {
@@ -75,7 +73,7 @@ const guardarMascotasUsuario = (pets: Pet[], ownerId?: string) => {
   try {
     localStorage.setItem(obtenerClaveUsuario(ownerId), JSON.stringify(pets));
   } catch {
-    // Ignorar error de cuota si ocurre
+    // Evita bloquear la interfaz si el almacenamiento del navegador está lleno
   }
 };
 
@@ -118,7 +116,7 @@ export const usePetStore = create<PetState>((set, get) => ({
         set({ tasks: dataTasks.tasks });
       }
     } catch {
-      // Si el backend no está activo, se mantienen las mascotas del usuario actual
+      // Mantiene los datos cargados previamente si el backend no responde
     }
   },
 
@@ -141,7 +139,7 @@ export const usePetStore = create<PetState>((set, get) => ({
           return;
         }
       } catch {
-        // Respaldo local en caso de estar sin servidor
+        // Continúa con el guardado local si no hay red
       }
     }
 
@@ -151,6 +149,7 @@ export const usePetStore = create<PetState>((set, get) => ({
     guardarMascotasUsuario(nuevaLista, ownerId);
   },
 
+  // Actualiza los datos de la mascota y sobrescribe su foto anterior en la base de datos
   actualizarMascota: async (id, datos, ownerId) => {
     const idUsuario = ownerId || '000000000000000000000001';
 
@@ -163,18 +162,16 @@ export const usePetStore = create<PetState>((set, get) => ({
         });
         const data = await response.json();
         if (data.ok && data.pet) {
-          // Reemplazamos la mascota (y su foto anterior) en la lista
           const listaActualizada = get().pets.map((p) => (p._id === id ? data.pet : p));
           set({ pets: listaActualizada });
           guardarMascotasUsuario(listaActualizada, ownerId);
           return;
         }
       } catch {
-        // Continúa actualización en cliente
+        // Continúa con la actualización local si no hay red
       }
     }
 
-    // Reemplaza la imagen anterior directamente sobre el registro existente
     const listaActualizada = get().pets.map((p) =>
       p._id === id ? { ...p, ...datos, _id: id, ownerId: idUsuario } : p
     );
@@ -187,7 +184,7 @@ export const usePetStore = create<PetState>((set, get) => ({
       try {
         await fetch(`${API_BASE}/pets/${id}`, { method: 'DELETE' });
       } catch {
-        // Continúa borrado en cliente
+        // Continúa con la eliminación en el estado local
       }
     }
     const listaFiltrada = get().pets.filter((p) => p._id !== id);
@@ -206,7 +203,7 @@ export const usePetStore = create<PetState>((set, get) => ({
       try {
         await fetch(`${API_BASE}/tasks/${id}`, { method: 'PATCH' });
       } catch {
-        // Se mantiene el cambio en la interfaz
+        // Conserva el cambio visual en caso de desconexión
       }
     }
   },

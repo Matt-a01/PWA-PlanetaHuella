@@ -1,10 +1,7 @@
-// frontend/src/services/authService.ts
-
-// Detectamos si estamos en local (localhost) o desplegados en la nube (Render)
+// Detecta si la app corre en entorno local o en producción (Render) para evitar bloqueos CORS loopback
 const isLocalhost =
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-// Normalizamos la URL si se configuró VITE_API_URL en Render
 const rawEnvUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim().replace(/\/$/, '');
 const API_BASE_URL = rawEnvUrl
   ? rawEnvUrl.endsWith('/api/auth')
@@ -14,7 +11,7 @@ const API_BASE_URL = rawEnvUrl
       : `${rawEnvUrl}/api/auth`
   : isLocalhost
     ? 'http://localhost:3000/api/auth'
-    : ''; // En Render sin VITE_API_URL evitamos llamar a localhost:3000 (bloqueado por CORS loopback)
+    : '';
 
 export interface AuthResponse {
   ok: boolean;
@@ -55,14 +52,11 @@ export const registerUser = async (
 ): Promise<AuthResponse> => {
   const normalizedEmail = email.trim().toLowerCase();
 
-  // Si tenemos URL de API (en localhost o con VITE_API_URL en Render), intentamos conectar al Backend
   if (API_BASE_URL) {
     try {
       const response = await fetch(`${API_BASE_URL}/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fullName, email: normalizedEmail, password }),
       });
 
@@ -73,15 +67,13 @@ export const registerUser = async (
 
       return data;
     } catch (error: any) {
-      // Si es un error de validación del servidor (ej. correo ya existe), lo mostramos
       if (error.message && !error.message.includes('Failed to fetch')) {
         throw error;
       }
-      // Si el backend aún no está levantado en Render, continuamos con el respaldo local
     }
   }
 
-  // Respaldo para que el despliegue en Render funcione aunque no esté activo el servicio de Backend
+  // Respaldo local cuando el servidor backend no está disponible
   const users = getLocalUsers();
   if (users.some((u) => u.email === normalizedEmail)) {
     throw new Error('Este correo electrónico ya está registrado. Por favor inicia sesión.');
@@ -114,14 +106,11 @@ export const registerUser = async (
 export const loginUser = async (email: string, password: string): Promise<AuthResponse> => {
   const normalizedEmail = email.trim().toLowerCase();
 
-  // Si tenemos URL de API configurada, consultamos el Backend Express + MongoDB
   if (API_BASE_URL) {
     try {
       const response = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalizedEmail, password }),
       });
 
@@ -138,7 +127,6 @@ export const loginUser = async (email: string, password: string): Promise<AuthRe
     }
   }
 
-  // Respaldo en producción (Render) si aún no se ha conectado VITE_API_URL
   const users = getLocalUsers();
   const found = users.find((u) => u.email === normalizedEmail);
 
@@ -159,7 +147,6 @@ export const loginUser = async (email: string, password: string): Promise<AuthRe
     };
   }
 
-  // Permite iniciar sesión en la demo de Render si el usuario aún no se había registrado localmente
   const fallbackName = normalizedEmail.split('@')[0] || 'Usuario';
   const demoUser: StoredLocalUser = {
     id: `usr_${Date.now()}`,
@@ -168,6 +155,7 @@ export const loginUser = async (email: string, password: string): Promise<AuthRe
     password,
     createdAt: new Date().toISOString(),
   };
+
   users.push(demoUser);
   localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
 
@@ -192,9 +180,7 @@ export const getMe = async (token: string): Promise<AuthResponse> => {
 
   try {
     const response = await fetch(`${API_BASE_URL}/me`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     });
 
     const data = await response.json();

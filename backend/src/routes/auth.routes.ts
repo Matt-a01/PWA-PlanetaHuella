@@ -1,4 +1,3 @@
-// backend/src/routes/auth.routes.ts
 import express, { type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -7,176 +6,163 @@ import User from '../models/User.js';
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'secret_planeta_huella_2026';
 
-// ==========================================
-// REGISTRO DE USUARIO: POST /api/auth/register
-// ==========================================
+// POST /api/auth/register - Registro de nuevo usuario con contraseña encriptada y token JWT
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { fullName, email, password } = req.body;
+  try {
+    const { fullName, email, password } = req.body;
 
-        // Validaciones básicas
-        if (!fullName || !email || !password) {
-            res.status(400).json({ 
-                ok: false, 
-                error: 'Todos los campos son obligatorios (nombre, correo y contraseña).' 
-            });
-            return;
-        }
-
-        if (password.length < 6) {
-            res.status(400).json({ 
-                ok: false, 
-                error: 'La contraseña debe tener al menos 6 caracteres.' 
-            });
-            return;
-        }
-
-        const normalizedEmail = email.trim().toLowerCase();
-
-        // Verificar si el usuario ya existe
-        const existingUser = await User.findOne({ email: normalizedEmail });
-        if (existingUser) {
-            res.status(409).json({ 
-                ok: false, 
-                error: 'Este correo electrónico ya está registrado. Por favor inicia sesión.' 
-            });
-            return;
-        }
-
-        // Hashear contraseña
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        // Guardar nuevo usuario en MongoDB Atlas
-        const newUser = await User.create({
-            fullName: fullName.trim(),
-            email: normalizedEmail,
-            password: hashedPassword
-        });
-
-        // Crear token JWT
-        const token = jwt.sign(
-            { id: newUser._id, email: newUser.email },
-            JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        res.status(201).json({
-            ok: true,
-            message: '¡Usuario registrado exitosamente!',
-            user: {
-                id: newUser._id,
-                fullName: newUser.fullName,
-                email: newUser.email,
-                createdAt: newUser.createdAt
-            },
-            token
-        });
-    } catch (error: any) {
-        console.error('Error al registrar usuario:', error);
-        res.status(500).json({ 
-            ok: false, 
-            error: 'Error interno del servidor al procesar el registro.' 
-        });
+    if (!fullName || !email || !password) {
+      res.status(400).json({
+        ok: false,
+        error: 'Todos los campos son obligatorios (nombre, correo y contraseña).',
+      });
+      return;
     }
+
+    if (password.length < 6) {
+      res.status(400).json({
+        ok: false,
+        error: 'La contraseña debe tener al menos 6 caracteres.',
+      });
+      return;
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+
+    if (existingUser) {
+      res.status(409).json({
+        ok: false,
+        error: 'Este correo electrónico ya está registrado. Por favor inicia sesión.',
+      });
+      return;
+    }
+
+    // Encriptación de contraseña con bcrypt antes de guardar en MongoDB
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newUser = await User.create({
+      fullName: fullName.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+    });
+
+    const token = jwt.sign(
+      { id: newUser._id, email: newUser.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      ok: true,
+      message: '¡Usuario registrado exitosamente!',
+      user: {
+        id: newUser._id,
+        fullName: newUser.fullName,
+        email: newUser.email,
+        createdAt: newUser.createdAt,
+      },
+      token,
+    });
+  } catch (error) {
+    console.error('Error al registrar usuario:', error);
+    res.status(500).json({
+      ok: false,
+      error: 'Error interno del servidor al procesar el registro.',
+    });
+  }
 });
 
-// ==========================================
-// INICIO DE SESIÓN: POST /api/auth/login
-// ==========================================
+// POST /api/auth/login - Autenticación de credenciales y emisión de sesión JWT
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-        if (!email || !password) {
-            res.status(400).json({ 
-                ok: false, 
-                error: 'Por favor ingresa tu correo y contraseña.' 
-            });
-            return;
-        }
-
-        const normalizedEmail = email.trim().toLowerCase();
-
-        // Buscar el usuario por email
-        const user = await User.findOne({ email: normalizedEmail });
-        if (!user) {
-            res.status(401).json({ 
-                ok: false, 
-                error: 'Credenciales inválidas. Correo o contraseña incorrectos.' 
-            });
-            return;
-        }
-
-        // Comparar contraseña hasheada
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            res.status(401).json({ 
-                ok: false, 
-                error: 'Credenciales inválidas. Correo o contraseña incorrectos.' 
-            });
-            return;
-        }
-
-        // Generar token JWT
-        const token = jwt.sign(
-            { id: user._id, email: user.email },
-            JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        res.status(200).json({
-            ok: true,
-            message: '¡Bienvenido de vuelta!',
-            user: {
-                id: user._id,
-                fullName: user.fullName,
-                email: user.email,
-                createdAt: user.createdAt
-            },
-            token
-        });
-    } catch (error: any) {
-        console.error('Error al iniciar sesión:', error);
-        res.status(500).json({ 
-            ok: false, 
-            error: 'Error interno del servidor al procesar el inicio de sesión.' 
-        });
+    if (!email || !password) {
+      res.status(400).json({
+        ok: false,
+        error: 'Por favor ingresa tu correo y contraseña.',
+      });
+      return;
     }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      res.status(401).json({
+        ok: false,
+        error: 'Credenciales inválidas. Correo o contraseña incorrectos.',
+      });
+      return;
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      res.status(401).json({
+        ok: false,
+        error: 'Credenciales inválidas. Correo o contraseña incorrectos.',
+      });
+      return;
+    }
+
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(200).json({
+      ok: true,
+      message: '¡Bienvenido de vuelta!',
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+      token,
+    });
+  } catch (error) {
+    console.error('Error al iniciar sesión:', error);
+    res.status(500).json({
+      ok: false,
+      error: 'Error interno del servidor al procesar el inicio de sesión.',
+    });
+  }
 });
 
-// ==========================================
-// VERIFICAR SESIÓN / PERFIL: GET /api/auth/me
-// ==========================================
+// GET /api/auth/me - Validación del token JWT para recuperar el perfil activo
 router.get('/me', async (req: Request, res: Response): Promise<void> => {
-    try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            res.status(401).json({ ok: false, error: 'Token no proporcionado.' });
-            return;
-        }
-
-        const token = authHeader.split(' ')[1] || '';
-        const decoded: any = jwt.verify(token, JWT_SECRET);
-
-        const user = await User.findById(decoded.id).select('-password');
-        if (!user) {
-            res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
-            return;
-        }
-
-        res.status(200).json({
-            ok: true,
-            user: {
-                id: user._id,
-                fullName: user.fullName,
-                email: user.email,
-                createdAt: user.createdAt
-            }
-        });
-    } catch {
-        res.status(401).json({ ok: false, error: 'Token inválido o expirado.' });
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ ok: false, error: 'Token no proporcionado.' });
+      return;
     }
+
+    const token = authHeader.split(' ')[1] || '';
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+
+    const user = await User.findById(decoded.id).select('-password');
+    if (!user) {
+      res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch {
+    res.status(401).json({ ok: false, error: 'Token inválido o expirado.' });
+  }
 });
 
 export default router;

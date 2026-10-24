@@ -1,4 +1,3 @@
-// frontend/src/store/useAuthStore.ts
 import { create } from 'zustand';
 
 export interface User {
@@ -16,7 +15,7 @@ interface AuthState {
   logout: () => void;
 }
 
-// Cargar estado inicial desde localStorage para persistencia de sesión
+// Recupera la sesión persistida en el navegador al iniciar la aplicación
 const savedUser = localStorage.getItem('ph_user');
 const savedToken = localStorage.getItem('ph_token');
 
