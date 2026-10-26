@@ -21,6 +21,8 @@ export interface AuthResponse {
     id: string;
     fullName: string;
     email: string;
+    role?: 'user' | 'admin';
+    roles?: string[];
     createdAt?: string;
   };
   token?: string;
@@ -31,6 +33,8 @@ interface StoredLocalUser {
   fullName: string;
   email: string;
   password: string;
+  role: 'user' | 'admin';
+  roles?: string[];
   createdAt: string;
 }
 
@@ -73,17 +77,19 @@ export const registerUser = async (
     }
   }
 
-  // Respaldo local cuando el servidor backend no está disponible
   const users = getLocalUsers();
   if (users.some((u) => u.email === normalizedEmail)) {
     throw new Error('Este correo electrónico ya está registrado. Por favor inicia sesión.');
   }
 
+  // Todo usuario nuevo inicia con rol 'user'; el rol 'admin' solo se otorga en la base de datos
   const newUser: StoredLocalUser = {
     id: `usr_${Date.now()}`,
     fullName: fullName.trim(),
     email: normalizedEmail,
     password,
+    role: 'user',
+    roles: ['user'],
     createdAt: new Date().toISOString(),
   };
 
@@ -97,6 +103,8 @@ export const registerUser = async (
       id: newUser.id,
       fullName: newUser.fullName,
       email: newUser.email,
+      role: newUser.role,
+      roles: newUser.roles,
       createdAt: newUser.createdAt,
     },
     token: `token_${newUser.id}`,
@@ -134,6 +142,8 @@ export const loginUser = async (email: string, password: string): Promise<AuthRe
     if (found.password !== password) {
       throw new Error('Credenciales inválidas. Correo o contraseña incorrectos.');
     }
+    const rolCalculado: 'user' | 'admin' =
+      found.role === 'admin' || found.roles?.includes('admin') ? 'admin' : 'user';
     return {
       ok: true,
       message: '¡Bienvenido de vuelta!',
@@ -141,6 +151,8 @@ export const loginUser = async (email: string, password: string): Promise<AuthRe
         id: found.id,
         fullName: found.fullName,
         email: found.email,
+        role: rolCalculado,
+        roles: found.roles || [rolCalculado],
         createdAt: found.createdAt,
       },
       token: `token_${found.id}`,
@@ -153,6 +165,8 @@ export const loginUser = async (email: string, password: string): Promise<AuthRe
     fullName: fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1),
     email: normalizedEmail,
     password,
+    role: 'user',
+    roles: ['user'],
     createdAt: new Date().toISOString(),
   };
 
@@ -166,30 +180,41 @@ export const loginUser = async (email: string, password: string): Promise<AuthRe
       id: demoUser.id,
       fullName: demoUser.fullName,
       email: demoUser.email,
+      role: demoUser.role,
+      roles: demoUser.roles,
       createdAt: demoUser.createdAt,
     },
     token: `token_${demoUser.id}`,
   };
 };
 
-export const getMe = async (token: string): Promise<AuthResponse> => {
-  if (!API_BASE_URL) {
-    const saved = localStorage.getItem('ph_user');
-    return { ok: true, user: saved ? JSON.parse(saved) : undefined, token };
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'Sesión no válida.');
+// Consulta el usuario directamente en MongoDB para reflejar cambios de rol hechos en la base de datos
+export const fetchUserFromDB = async (userId: string): Promise<AuthResponse['user'] | null> => {
+  if (API_BASE_URL && userId && !userId.startsWith('usr_')) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/user/${userId}`);
+      const data = await response.json();
+      if (data.ok && data.user) {
+        return data.user;
+      }
+    } catch {
+      // Si no hay conexión con el servidor, verifica el registro local
     }
-
-    return data;
-  } catch (error: any) {
-    throw new Error(error.message || 'Error al validar la sesión.');
   }
+
+  const found = getLocalUsers().find((u) => u.id === userId);
+  if (found) {
+    const rolCalculado: 'user' | 'admin' =
+      found.role === 'admin' || found.roles?.includes('admin') ? 'admin' : 'user';
+    return {
+      id: found.id,
+      fullName: found.fullName,
+      email: found.email,
+      role: rolCalculado,
+      roles: found.roles || [rolCalculado],
+      createdAt: found.createdAt,
+    };
+  }
+
+  return null;
 };
