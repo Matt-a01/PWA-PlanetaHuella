@@ -1,10 +1,24 @@
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, ShieldCheck, LogOut, Database } from 'lucide-react';
+import { User, Mail, ShieldCheck, LogOut, Database, Shield, RefreshCw } from 'lucide-react';
 
 export default function Perfil() {
-  const { user, logout } = useAuthStore();
+  const { user, sincronizarRolDesdeBD, logout } = useAuthStore();
   const navigate = useNavigate();
+  const [sincronizando, setSincronizando] = useState(false);
+
+  const esAdmin = user?.role === 'admin' || user?.roles?.includes('admin');
+
+  useEffect(() => {
+    sincronizarRolDesdeBD();
+  }, [sincronizarRolDesdeBD]);
+
+  const handleSincronizar = async () => {
+    setSincronizando(true);
+    await sincronizarRolDesdeBD();
+    setSincronizando(false);
+  };
 
   const handleLogout = () => {
     logout();
@@ -25,10 +39,31 @@ export default function Perfil() {
         <h2 className="text-xl font-bold text-gray-900">{user?.fullName || 'Usuario Invitado'}</h2>
         <p className="text-sm text-gray-500 mt-0.5">{user?.email || 'Sin correo asociado'}</p>
 
-        <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-200">
-          <Database size={13} />
-          <span>Registrado en MongoDB Atlas</span>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-200">
+            <Database size={13} />
+            <span>MongoDB Atlas</span>
+          </div>
+          <div
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+              esAdmin
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-slate-50 text-slate-700 border-slate-200'
+            }`}
+          >
+            <Shield size={13} />
+            <span>{esAdmin ? 'Rol en BD: Administrador' : 'Rol en BD: Usuario'}</span>
+          </div>
         </div>
+
+        <button
+          type="button"
+          onClick={handleSincronizar}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs text-green-700 hover:underline font-medium cursor-pointer"
+        >
+          <RefreshCw size={13} className={sincronizando ? 'animate-spin' : ''} />
+          <span>{sincronizando ? 'Consultando base de datos...' : 'Sincronizar rol desde MongoDB'}</span>
+        </button>
       </div>
 
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6 space-y-4">
@@ -52,6 +87,18 @@ export default function Perfil() {
           </div>
         </div>
 
+        <div className="flex items-center gap-3 py-2 border-b border-gray-100">
+          <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-500">
+            <Shield size={20} />
+          </div>
+          <div>
+            <p className="text-xs text-gray-400">Roles asignados en Base de Datos</p>
+            <p className="text-sm font-semibold text-gray-800">
+              {user?.roles?.length ? user.roles.join(', ') : user?.role || 'user'}
+            </p>
+          </div>
+        </div>
+
         <div className="flex items-center gap-3 py-2">
           <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-500">
             <ShieldCheck size={20} />
@@ -59,7 +106,7 @@ export default function Perfil() {
           <div>
             <p className="text-xs text-gray-400">ID en MongoDB</p>
             <p className="text-xs font-mono text-gray-600 truncate max-w-[220px]">
-              {user?.id || 'Sesión no persistida'}
+              {user?.id || 'Sesión activa'}
             </p>
           </div>
         </div>
