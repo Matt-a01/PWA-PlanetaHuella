@@ -7,8 +7,9 @@ const petSchema = new mongoose.Schema(
     breed: { type: String, required: true },
     age: { type: Number, required: true },
     gender: { type: String, required: true },
+    characteristics: { type: String, default: '' },
     imageUrl: { type: String },
-    // Relación con el usuario propietario para aislar las mascotas e imágenes por cuenta
+    // Relación con el usuario propietario para aislar las mascotas, tareas e imágenes por cuenta
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true }
