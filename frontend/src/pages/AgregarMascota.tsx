@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type FormEvent, type ChangeEvent } from 'react';
-import { ChevronLeft, Camera, Upload, Trash2 } from 'lucide-react';
+import { ChevronLeft, Camera, Upload, Trash2, Plus, X } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePetStore } from '../store/usePetStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -10,7 +10,14 @@ export default function AgregarMascota() {
   const editId = searchParams.get('id');
 
   const user = useAuthStore((state) => state.user);
-  const { pets, agregarMascota, actualizarMascota } = usePetStore();
+  const {
+    pets,
+    catalogRazas,
+    cargarCatalogo,
+    obtenerTareasSugeridas,
+    agregarMascota,
+    actualizarMascota,
+  } = usePetStore();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const mascotaEditar = pets.find((p) => p._id === editId);
@@ -20,9 +27,23 @@ export default function AgregarMascota() {
   const [breed, setBreed] = useState('Golden Retriever');
   const [age, setAge] = useState('3');
   const [gender, setGender] = useState('Hembra');
+  const [characteristics, setCharacteristics] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [nombreArchivo, setNombreArchivo] = useState('');
+  const [tareasPersonalizadas, setTareasPersonalizadas] = useState<string[]>([]);
+  const [nuevaTareaTexto, setNuevaTareaTexto] = useState('');
   const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    cargarCatalogo();
+  }, [cargarCatalogo]);
+
+  // Filtra las razas disponibles en la base de datos según la especie elegida
+  const razasDisponibles = catalogRazas.filter((r) => {
+    if (species === 'Perro') return r.category === 'Perros';
+    if (species === 'Gato') return r.category === 'Gatos';
+    return r.category === 'Otros';
+  });
 
   useEffect(() => {
     if (mascotaEditar) {
@@ -31,16 +52,33 @@ export default function AgregarMascota() {
       setBreed(mascotaEditar.breed);
       setAge(String(mascotaEditar.age));
       setGender(mascotaEditar.gender);
+      setCharacteristics(mascotaEditar.characteristics || '');
       setImageUrl(mascotaEditar.imageUrl || '');
     }
   }, [mascotaEditar]);
+
+  // Actualiza las tareas predeterminadas sugeridas al cambiar la especie o raza (solo en registro nuevo)
+  useEffect(() => {
+    if (!mascotaEditar) {
+      setTareasPersonalizadas(obtenerTareasSugeridas(species, breed));
+    }
+  }, [species, breed, mascotaEditar, obtenerTareasSugeridas]);
+
+  const handleSpeciesChange = (nuevaEspecie: string) => {
+    setSpecies(nuevaEspecie);
+    const primeraRaza = catalogRazas.find((r) => {
+      if (nuevaEspecie === 'Perro') return r.category === 'Perros';
+      if (nuevaEspecie === 'Gato') return r.category === 'Gatos';
+      return r.category === 'Otros';
+    });
+    setBreed(primeraRaza ? primeraRaza.name : nuevaEspecie);
+  };
 
   const fotoPorDefecto =
     species === 'Gato'
       ? 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=200&q=80'
       : 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=200&q=80';
 
-  // Redimensiona la imagen en un Canvas a máx. 500px JPEG para optimizar el espacio en MongoDB
   const manejarSeleccionImagen = (e: ChangeEvent<HTMLInputElement>) => {
     const archivo = e.target.files?.[0];
     if (!archivo) return;
@@ -86,6 +124,16 @@ export default function AgregarMascota() {
     }
   };
 
+  const agregarTareaALista = () => {
+    if (!nuevaTareaTexto.trim()) return;
+    setTareasPersonalizadas([...tareasPersonalizadas, nuevaTareaTexto.trim()]);
+    setNuevaTareaTexto('');
+  };
+
+  const quitarTareaDeLista = (idx: number) => {
+    setTareasPersonalizadas(tareasPersonalizadas.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -97,13 +145,14 @@ export default function AgregarMascota() {
       breed,
       age: Number(age) || 1,
       gender,
+      characteristics: characteristics.trim(),
       imageUrl: imageUrl.trim() || fotoPorDefecto,
     };
 
     if (mascotaEditar) {
       await actualizarMascota(mascotaEditar._id, datosMascota, user?.id);
     } else {
-      await agregarMascota(datosMascota, user?.id);
+      await agregarMascota(datosMascota, user?.id, tareasPersonalizadas);
     }
 
     setGuardando(false);
@@ -200,31 +249,30 @@ export default function AgregarMascota() {
             <label className="block text-xs font-semibold text-gray-500 mb-1">Especie</label>
             <select
               value={species}
-              onChange={(e) => setSpecies(e.target.value)}
+              onChange={(e) => handleSpeciesChange(e.target.value)}
               className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-green-600 focus:outline-none text-sm"
             >
               <option value="Perro">Perro</option>
               <option value="Gato">Gato</option>
               <option value="Conejo">Conejo</option>
               <option value="Ave">Ave</option>
+              <option value="Otro">Otro animal</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Raza</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Raza o Tipo (Cargado de BD)</label>
             <select
               value={breed}
               onChange={(e) => setBreed(e.target.value)}
               className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-green-600 focus:outline-none text-sm"
             >
-              <option value="Golden Retriever">Golden Retriever</option>
-              <option value="Labrador">Labrador</option>
-              <option value="Bulldog">Bulldog</option>
-              <option value="Beagle">Beagle</option>
-              <option value="Poodle">Poodle</option>
-              <option value="Europeo">Europeo</option>
-              <option value="Siamés">Siamés</option>
-              <option value="Mestizo">Mestizo</option>
+              {razasDisponibles.map((r) => (
+                <option key={r._id} value={r.name}>
+                  {r.name}
+                </option>
+              ))}
+              <option value="Mestizo">Mestizo / Otra</option>
             </select>
           </div>
 
@@ -275,6 +323,68 @@ export default function AgregarMascota() {
             </div>
           </div>
 
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">
+              Características únicas (pelaje, alergias, comportamiento)
+            </label>
+            <input
+              type="text"
+              value={characteristics}
+              onChange={(e) => setCharacteristics(e.target.value)}
+              placeholder="Ej. Pelaje largo, muy activo, sensible al calor..."
+              className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-green-600 focus:outline-none text-sm"
+            />
+          </div>
+
+          {/* Tareas sugeridas según especie y raza que el usuario puede quitar o personalizar */}
+          {!mascotaEditar && (
+            <div className="pt-2 border-t border-gray-100">
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Tareas sugeridas para {species} ({breed})
+              </label>
+              <p className="text-[11px] text-gray-400 mb-2">
+                Puedes quitar las actividades que no necesites o agregar nuevas para esta mascota:
+              </p>
+
+              <div className="space-y-1.5 mb-3">
+                {tareasPersonalizadas.map((tarea, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between bg-green-50/70 border border-green-100 px-3 py-2 rounded-xl text-xs text-green-900"
+                  >
+                    <span>• {tarea}</span>
+                    <button
+                      type="button"
+                      onClick={() => quitarTareaDeLista(idx)}
+                      className="text-gray-400 hover:text-red-500 p-0.5 cursor-pointer"
+                      title="Quitar tarea sugerida"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={nuevaTareaTexto}
+                  onChange={(e) => setNuevaTareaTexto(e.target.value)}
+                  placeholder="Agregar otra actividad para esta mascota..."
+                  className="flex-1 p-2.5 bg-gray-50 rounded-xl border border-gray-200 text-xs focus:outline-none focus:border-green-600"
+                />
+                <button
+                  type="button"
+                  onClick={agregarTareaALista}
+                  className="bg-green-100 text-green-800 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-green-200 flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>Añadir</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={guardando}
@@ -284,7 +394,7 @@ export default function AgregarMascota() {
               ? 'Guardando en la base de datos...'
               : mascotaEditar
                 ? 'Guardar cambios y actualizar foto'
-                : 'Guardar mascota'}
+                : 'Guardar mascota y sus actividades'}
           </button>
         </form>
       </div>

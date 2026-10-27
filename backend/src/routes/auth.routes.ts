@@ -6,7 +6,15 @@ import User from '../models/User.js';
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'secret_planeta_huella_2026';
 
-// POST /api/auth/register - Registro de nuevo usuario con contraseña encriptada y token JWT
+// Verifica si el documento en MongoDB tiene configurado el rol 'admin' (en 'role' o dentro de 'roles')
+const obtenerRolDesdeBD = (userDoc: { role?: string; roles?: string[] }): 'user' | 'admin' => {
+  if (userDoc.role === 'admin' || (Array.isArray(userDoc.roles) && userDoc.roles.includes('admin'))) {
+    return 'admin';
+  }
+  return 'user';
+};
+
+// POST /api/auth/register - Toda cuenta nueva se registra como 'user'; el rol 'admin' solo se otorga en BD
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const { fullName, email, password } = req.body;
@@ -38,7 +46,6 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Encriptación de contraseña con bcrypt antes de guardar en MongoDB
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -46,10 +53,14 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       fullName: fullName.trim(),
       email: normalizedEmail,
       password: hashedPassword,
+      role: 'user',
+      roles: ['user'],
     });
 
+    const rolActual = obtenerRolDesdeBD(newUser);
+
     const token = jwt.sign(
-      { id: newUser._id, email: newUser.email },
+      { id: newUser._id, email: newUser.email, role: rolActual },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -61,6 +72,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         id: newUser._id,
         fullName: newUser.fullName,
         email: newUser.email,
+        role: rolActual,
+        roles: newUser.roles,
         createdAt: newUser.createdAt,
       },
       token,
@@ -74,7 +87,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// POST /api/auth/login - Autenticación de credenciales y emisión de sesión JWT
+// POST /api/auth/login - Autentica al usuario y consulta su rol directamente desde MongoDB Atlas
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
@@ -107,8 +120,10 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    const rolActual = obtenerRolDesdeBD(user);
+
     const token = jwt.sign(
-      { id: user._id, email: user.email },
+      { id: user._id, email: user.email, role: rolActual },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -120,6 +135,8 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         id: user._id,
         fullName: user.fullName,
         email: user.email,
+        role: rolActual,
+        roles: user.roles?.length ? user.roles : [rolActual],
         createdAt: user.createdAt,
       },
       token,
@@ -133,7 +150,34 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// GET /api/auth/me - Validación del token JWT para recuperar el perfil activo
+// GET /api/auth/user/:id - Consulta en tiempo real el rol del usuario en MongoDB por si fue modificado en BD
+router.get('/user/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) {
+      res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+      return;
+    }
+
+    const rolActual = obtenerRolDesdeBD(user);
+
+    res.status(200).json({
+      ok: true,
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        role: rolActual,
+        roles: user.roles?.length ? user.roles : [rolActual],
+        createdAt: user.createdAt,
+      },
+    });
+  } catch {
+    res.status(400).json({ ok: false, error: 'ID de usuario no válido.' });
+  }
+});
+
+// GET /api/auth/me - Validación del token JWT y sincronización del rol actual desde MongoDB
 router.get('/me', async (req: Request, res: Response): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
@@ -151,12 +195,16 @@ router.get('/me', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    const rolActual = obtenerRolDesdeBD(user);
+
     res.status(200).json({
       ok: true,
       user: {
         id: user._id,
         fullName: user.fullName,
         email: user.email,
+        role: rolActual,
+        roles: user.roles?.length ? user.roles : [rolActual],
         createdAt: user.createdAt,
       },
     });

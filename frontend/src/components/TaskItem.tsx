@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Trash2 } from 'lucide-react';
 
 interface TaskItemProps {
   taskName: string;
@@ -8,6 +8,7 @@ interface TaskItemProps {
   iconBgColor: string;
   isCompleted?: boolean;
   onToggle?: () => void;
+  onDelete?: () => void;
 }
 
 export default function TaskItem({
@@ -17,6 +18,7 @@ export default function TaskItem({
   iconBgColor,
   isCompleted = false,
   onToggle,
+  onDelete,
 }: TaskItemProps) {
   return (
     <div className="flex items-center justify-between bg-white p-3 rounded-2xl mb-3 shadow-sm border border-gray-100">
@@ -37,7 +39,20 @@ export default function TaskItem({
           <p className="text-xs text-gray-500">{petName}</p>
         </div>
       </div>
-      <ChevronRight size={20} className="text-gray-400" />
+
+      <div className="flex items-center gap-1">
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Quitar esta actividad"
+            className="p-2 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
+        <ChevronRight size={20} className="text-gray-400" />
+      </div>
     </div>
   );
 }

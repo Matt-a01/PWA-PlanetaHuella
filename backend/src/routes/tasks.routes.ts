@@ -4,19 +4,34 @@ import Pet from '../models/Pet.js';
 
 const router = express.Router();
 
+const detectarIcono = (titulo: string, iconoManual?: string): string => {
+  if (iconoManual) return iconoManual;
+  const t = titulo.toLowerCase();
+  if (t.includes('agua') || t.includes('bebedero') || t.includes('humedad') || t.includes('filtro')) {
+    return 'droplet';
+  }
+  if (t.includes('paseo') || t.includes('caminata') || t.includes('ejercicio') || t.includes('juego') || t.includes('jugar')) {
+    return 'footprints';
+  }
+  if (t.includes('cepillar') || t.includes('pelaje') || t.includes('limpiar') || t.includes('arenero') || t.includes('jaula') || t.includes('dientes')) {
+    return 'scissors';
+  }
+  return 'bone';
+};
+
 // GET /api/tasks?ownerId=... - Obtiene las tareas vinculadas a las mascotas del usuario
 router.get('/', async (req, res) => {
   try {
     const { ownerId } = req.query;
-    let filtro = {};
-
-    if (ownerId) {
-      const mascotasUsuario = await Pet.find({ ownerId: String(ownerId) }).select('_id');
-      const idsMascotas = mascotasUsuario.map((m) => m._id);
-      filtro = { petId: { $in: idsMascotas } };
+    if (!ownerId) {
+      res.json({ ok: true, tasks: [] });
+      return;
     }
 
-    const tasks = await Task.find(filtro).populate('petId', 'name species');
+    const mascotasUsuario = await Pet.find({ ownerId: String(ownerId) }).select('_id');
+    const idsMascotas = mascotasUsuario.map((m) => m._id);
+
+    const tasks = await Task.find({ petId: { $in: idsMascotas } }).populate('petId', 'name species');
     res.json({ ok: true, tasks });
   } catch (error) {
     console.error('Error al obtener tareas:', error);
@@ -24,7 +39,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/tasks - Registra una nueva tarea diaria para una mascota
+// POST /api/tasks - Registra una tarea personalizada para una mascota específica
 router.post('/', async (req, res) => {
   try {
     const { title, iconType, petId } = req.body;
@@ -35,8 +50,8 @@ router.post('/', async (req, res) => {
     }
 
     const nuevaTarea = await Task.create({
-      title,
-      iconType: iconType || 'bone',
+      title: title.trim(),
+      iconType: detectarIcono(title, iconType),
       isCompleted: false,
       petId,
     });
@@ -69,7 +84,7 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/tasks/:id - Elimina una tarea específica
+// DELETE /api/tasks/:id - Elimina una tarea del perfil de la mascota
 router.delete('/:id', async (req, res) => {
   try {
     await Task.findByIdAndDelete(req.params.id);
