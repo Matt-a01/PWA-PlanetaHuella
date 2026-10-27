@@ -1,10 +1,10 @@
-// frontend/src/store/useAuthStore.ts
 import { create } from 'zustand';
 
 export interface User {
   id: string;
   fullName: string;
   email: string;
+  createdAt?: string;
 }
 
 interface AuthState {
@@ -15,6 +15,7 @@ interface AuthState {
   logout: () => void;
 }
 
+// Recupera la sesión persistida en el navegador al iniciar la aplicación
 const savedUser = localStorage.getItem('ph_user');
 const savedToken = localStorage.getItem('ph_token');
 
@@ -23,7 +24,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: savedToken || null,
   isAuthenticated: !!savedToken,
 
-  login: (user, token) => {
+  login: (user: User, token: string) => {
     localStorage.setItem('ph_user', JSON.stringify(user));
     localStorage.setItem('ph_token', token);
     set({ user, token, isAuthenticated: true });
