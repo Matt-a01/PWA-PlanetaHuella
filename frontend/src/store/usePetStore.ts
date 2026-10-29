@@ -63,7 +63,7 @@ const razasPorDefecto: BreedItem[] = [
     name: 'Labrador',
     category: 'Perros',
     desc: 'Amigable y activo',
-    img: 'https://images.unsplash.com/photo-1596492784531-6e6eb5ea9993?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1596492784531-6e6eb5ea9993?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Dar alimento balanceado', 'Agua fresca', 'Paseo activo de 45 min', 'Juego de cobro con pelota'],
   },
   {
@@ -71,7 +71,7 @@ const razasPorDefecto: BreedItem[] = [
     name: 'Golden Retriever',
     category: 'Perros',
     desc: 'Cariñoso y leal',
-    img: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Dar alimento balanceado', 'Agua fresca', 'Paseo diario de 40 min', 'Cepillar pelaje largo'],
   },
   {
@@ -79,7 +79,7 @@ const razasPorDefecto: BreedItem[] = [
     name: 'Bulldog',
     category: 'Perros',
     desc: 'Tranquilo y noble',
-    img: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Porción medida de comida', 'Agua fresca', 'Caminata suave de 20 min', 'Limpiar pliegues faciales'],
   },
   {
@@ -87,7 +87,7 @@ const razasPorDefecto: BreedItem[] = [
     name: 'Beagle',
     category: 'Perros',
     desc: 'Curioso y enérgico',
-    img: 'https://images.unsplash.com/photo-1537151608804-ea6f23b207eb?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1537151608804-ea6f23b207eb?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Dar alimento balanceado', 'Agua fresca', 'Paseo de exploración y olfato', 'Revisar orejas caídas'],
   },
   {
@@ -95,7 +95,7 @@ const razasPorDefecto: BreedItem[] = [
     name: 'Poodle',
     category: 'Perros',
     desc: 'Inteligente y dócil',
-    img: 'https://images.unsplash.com/photo-1616149562385-1d84e79478bb?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1616149562385-1d84e79478bb?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Dar alimento balanceado', 'Agua fresca', 'Desenredar pelaje rizado', 'Juego de estimulación mental'],
   },
   {
@@ -103,24 +103,88 @@ const razasPorDefecto: BreedItem[] = [
     name: 'Pastor Alemán',
     category: 'Perros',
     desc: 'Valiente y protector',
-    img: 'https://images.unsplash.com/photo-1589941013453-ec89f33b5e95?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1589941013453-ec89f33b5e95?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Ración alta en proteína', 'Agua fresca', 'Ejercicio físico intenso', 'Cepillado de subpelo'],
   },
   {
-    _id: 'r7',
+    _id: 'r7_chihuahua',
+    name: 'Chihuahua',
+    category: 'Perros',
+    desc: 'Pequeño, alerta y leal',
+    img: 'https://images.unsplash.com/photo-1560807707-8cc77767d783?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Porción pequeña de alimento', 'Agua fresca', 'Paseo corto de 15 min', 'Cuidar del frío'],
+  },
+  {
+    _id: 'r8_husky',
+    name: 'Husky Siberiano',
+    category: 'Perros',
+    desc: 'Atlético, expresivo y sociable',
+    img: 'https://images.unsplash.com/photo-1605568427561-40dd23c2acea?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Alimento rico en energía', 'Agua abundante y fresca', 'Carrera o caminata larga', 'Cepillado profundo de doble capa'],
+  },
+  {
+    _id: 'r9_pug',
+    name: 'Pug',
+    category: 'Perros',
+    desc: 'Simpático, afectuoso y juguetón',
+    img: 'https://images.unsplash.com/photo-1517423440428-a5a00ad493e8?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Controlar porción de comida', 'Agua fresca', 'Paseo en horario fresco', 'Limpiar arrugas faciales'],
+  },
+  {
+    _id: 'r10_schnauzer',
+    name: 'Schnauzer',
+    category: 'Perros',
+    desc: 'Obediente, activo y guardián',
+    img: 'https://images.unsplash.com/photo-1535930891776-0c2dfb7fda1a?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Dar alimento balanceado', 'Agua fresca', 'Limpiar barba después de comer', 'Paseo diario de 30 min'],
+  },
+  {
+    _id: 'g1',
     name: 'Europeo',
     category: 'Gatos',
     desc: 'Cariñoso y adaptable',
-    img: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Servir alimento para gato', 'Renovar agua fresca', 'Limpiar caja de arena', 'Jugar con caña o rascador'],
   },
   {
-    _id: 'r8',
+    _id: 'g2',
     name: 'Siamés',
     category: 'Gatos',
     desc: 'Sociable y curioso',
-    img: 'https://images.unsplash.com/photo-1513245543132-31f507417b26?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1513245543132-31f507417b26?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Servir alimento húmedo/seco', 'Renovar agua fresca', 'Limpiar arenero', 'Sesión de juego interactivo'],
+  },
+  {
+    _id: 'g3_persa',
+    name: 'Persa',
+    category: 'Gatos',
+    desc: 'Tranquilo y elegante',
+    img: 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Servir alimento para pelo largo', 'Renovar agua fresca', 'Cepillado diario de pelaje largo', 'Limpiar contorno de ojos'],
+  },
+  {
+    _id: 'g4_mainecoon',
+    name: 'Maine Coon',
+    category: 'Gatos',
+    desc: 'Grande, gentil y juguetón',
+    img: 'https://images.unsplash.com/photo-1533738363-b7f9aef128ce?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Ración adecuada a su tamaño', 'Fuente de agua fresca', 'Cepillar melena y cola', 'Juego de trepar en rascador'],
+  },
+  {
+    _id: 'g5_bengali',
+    name: 'Bengalí',
+    category: 'Gatos',
+    desc: 'Ágil, curioso y muy activo',
+    img: 'https://images.unsplash.com/photo-1592194996308-7b43878e84a6?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Alimento rico en proteína', 'Agua en movimiento o fresca', 'Juegos de caza y agilidad', 'Limpiar arenero'],
+  },
+  {
+    _id: 'g6_azulruso',
+    name: 'Azul Ruso',
+    category: 'Gatos',
+    desc: 'Sereno, limpio y afectuoso',
+    img: 'https://images.unsplash.com/photo-1511044568932-338cba0ad803?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Servir alimento balanceado', 'Renovar agua fresca', 'Limpiar caja de arena', 'Cepillado suave semanal'],
   },
   {
     _id: 'o1',
@@ -128,7 +192,7 @@ const razasPorDefecto: BreedItem[] = [
     category: 'Otros',
     desc: 'Canarios, loros, periquitos...',
     bg: 'bg-green-50',
-    img: 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Cambiar semillas y fruta', 'Lavar bebedero de agua', 'Limpiar bandeja de la jaula'],
   },
   {
@@ -137,7 +201,7 @@ const razasPorDefecto: BreedItem[] = [
     category: 'Otros',
     desc: 'Tiernos y juguetones',
     bg: 'bg-pink-50',
-    img: 'https://images.unsplash.com/photo-1585110396000-c9ffd4e4b308?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1585110396000-c9ffd4e4b308?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Rellenar heno fresco', 'Dar hojas verdes lavadas', 'Agua limpia en bebedero', 'Cepillar y revisar dientes'],
   },
   {
@@ -146,7 +210,7 @@ const razasPorDefecto: BreedItem[] = [
     category: 'Otros',
     desc: 'Pequeños grandes amigos',
     bg: 'bg-orange-50',
-    img: 'https://images.unsplash.com/photo-1425082661705-1834bfd09dca?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1425082661705-1834bfd09dca?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Servir mezcla de semillas', 'Revisar bebedero de gota', 'Limpiar rincón húmedo del sustrato'],
   },
   {
@@ -155,7 +219,7 @@ const razasPorDefecto: BreedItem[] = [
     category: 'Otros',
     desc: 'Acuáticos y cuidados',
     bg: 'bg-sky-50',
-    img: 'https://images.unsplash.com/photo-1522069169874-c58ec4b76be5?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1522069169874-c58ec4b76be5?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Alimentar en pequeñas dosis', 'Verificar filtro y temperatura', 'Retirar restos de comida'],
   },
   {
@@ -164,7 +228,7 @@ const razasPorDefecto: BreedItem[] = [
     category: 'Otros',
     desc: 'Iguanas, geckos, serpientes...',
     bg: 'bg-emerald-50',
-    img: 'https://images.unsplash.com/photo-1504450874802-0ba2bcd9b5ae?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1504450874802-0ba2bcd9b5ae?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Revisar lámpara térmica UVB', 'Rociar humedad en terrario', 'Ofrecer alimento según especie'],
   },
   {
@@ -173,8 +237,26 @@ const razasPorDefecto: BreedItem[] = [
     category: 'Otros',
     desc: 'Curiosos y activos',
     bg: 'bg-rose-50',
-    img: 'https://images.unsplash.com/photo-1615087240969-eeff2fa558f2?auto=format&fit=crop&w=200&q=80',
+    img: 'https://images.unsplash.com/photo-1615087240969-eeff2fa558f2?auto=format&fit=crop&w=300&q=80',
     suggestedTasks: ['Dar comida alta en proteína', 'Agua fresca', 'Tiempo de juego fuera de jaula', 'Limpiar esquinero'],
+  },
+  {
+    _id: 'o7_tortugas',
+    name: 'Tortugas',
+    category: 'Otros',
+    desc: 'Tranquilas, longevas y dóciles',
+    bg: 'bg-lime-50',
+    img: 'https://images.unsplash.com/photo-1437622368342-7a3d73a34c8f?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Ofrecer vegetales y calcio', 'Lavar zona de agua', 'Exposición a luz solar o UVB'],
+  },
+  {
+    _id: 'o8_cuyos',
+    name: 'Cuyos / Cobayas',
+    category: 'Otros',
+    desc: 'Sociables, tiernos y comunicativos',
+    bg: 'bg-amber-50',
+    img: 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?auto=format&fit=crop&w=300&q=80',
+    suggestedTasks: ['Heno disponible todo el día', 'Verdura rica en vitamina C', 'Agua fresca en bebedero'],
   },
 ];
 
@@ -203,7 +285,120 @@ const tipsPorDefecto: TipItem[] = [
     species: 'Todos',
     iconType: 'heart',
   },
+  {
+    _id: 'tip4',
+    title: 'Hidratación constante',
+    desc: 'Agua limpia y fresca disponible todo el día',
+    detail: 'Lava el plato o bebedero diariamente y cambia el agua al menos dos veces al día.',
+    species: 'Todos',
+    iconType: 'heart',
+  },
+  {
+    _id: 'tip5',
+    title: 'Calendario de vacunación y desparasitación',
+    desc: 'Protección preventiva anual y semestral',
+    detail: 'Registra en el perfil médico cada vacuna y desparasitación interna o externa.',
+    species: 'Todos',
+    iconType: 'heart',
+  },
+  {
+    _id: 'tip6',
+    title: 'Paseos seguros y socialización',
+    desc: 'Estimulación olfativa y convivencia sana',
+    detail: 'Permite que tu perro olfatee durante el paseo; evita el pavimento muy caliente al mediodía.',
+    species: 'Perro',
+    iconType: 'footprints',
+  },
+  {
+    _id: 'tip7',
+    title: 'Enriquecimiento ambiental felino',
+    desc: 'Rascadores, alturas y juego de caza',
+    detail: 'Los gatos necesitan rascadores verticales y sesiones cortas de juego interactivo.',
+    species: 'Gato',
+    iconType: 'sparkles',
+  },
+  {
+    _id: 'tip8',
+    title: 'Higiene del arenero',
+    desc: 'Bienestar y prevención de estrés en gatos',
+    detail: 'Retira los desechos diariamente y ubica la caja de arena lejos de su plato de comida.',
+    species: 'Gato',
+    iconType: 'sparkles',
+  },
+  {
+    _id: 'tip9',
+    title: 'Desgaste dental natural con heno',
+    desc: 'Indispensable para conejos y roedores',
+    detail: 'El heno fresco debe representar el 80% de la dieta de los conejos para su digestión y dientes.',
+    species: 'Conejo',
+    iconType: 'heart',
+  },
+  {
+    _id: 'tip10',
+    title: 'Cuidado de jaula e iluminación',
+    desc: 'Ambiente limpio y ventilado para aves',
+    detail: 'Ubica la jaula en un lugar iluminado sin corrientes directas de aire y limpia las perchas.',
+    species: 'Ave',
+    iconType: 'sparkles',
+  },
 ];
+
+// Garantiza que todos los documentos de razas tengan categoría, imagen y descripción válidas
+const normalizarListaRazas = (lista: any[]): BreedItem[] => {
+  if (!Array.isArray(lista) || lista.length === 0) return razasPorDefecto;
+
+  const normalizadas: BreedItem[] = lista.map((item, idx) => {
+    const especieTexto = String(item.category || item.species || '').toLowerCase();
+    let category: 'Perros' | 'Gatos' | 'Otros' = 'Perros';
+    if (item.category === 'Perros' || item.category === 'Gatos' || item.category === 'Otros') {
+      category = item.category;
+    } else if (especieTexto.includes('gato')) {
+      category = 'Gatos';
+    } else if (!especieTexto.includes('perro')) {
+      category = 'Otros';
+    }
+
+    return {
+      _id: String(item._id || `raza_${idx}`),
+      name: String(item.name || 'Mascota'),
+      category,
+      desc: String(item.desc || item.description || 'Compañero leal y cariñoso'),
+      img: String(item.img ?? item.imageUrl ?? ''),
+      bg: String(item.bg || 'bg-green-50'),
+      suggestedTasks:
+        Array.isArray(item.suggestedTasks) && item.suggestedTasks.length > 0
+          ? item.suggestedTasks
+          : ['Dar alimento adecuado', 'Agua fresca', 'Cuidado diario'],
+    };
+  });
+
+  // Si un caché antiguo no tenía la categoría 'Otros', incorpora las especies faltantes por defecto
+  const tieneOtros = normalizadas.some((r) => r.category === 'Otros');
+  if (!tieneOtros) {
+    const otrosFaltantes = razasPorDefecto.filter(
+      (def) =>
+        def.category === 'Otros' &&
+        !normalizadas.some((n) => n.name.toLowerCase() === def.name.toLowerCase())
+    );
+    return [...normalizadas, ...otrosFaltantes];
+  }
+
+  return normalizadas;
+};
+
+// Garantiza que todas las recomendaciones tengan estructura completa para usuarios y administradores
+const normalizarListaTips = (lista: any[]): TipItem[] => {
+  if (!Array.isArray(lista) || lista.length === 0) return tipsPorDefecto;
+
+  return lista.map((item, idx) => ({
+    _id: String(item._id || `tip_${idx}`),
+    title: String(item.title || 'Consejo de bienestar'),
+    desc: String(item.desc || item.summary || 'Recomendación para el cuidado diario'),
+    detail: String(item.detail || item.content || item.desc || ''),
+    species: String(item.species || 'Todos'),
+    iconType: String(item.iconType || 'footprints'),
+  }));
+};
 
 const mascotasIniciales: Pet[] = [
   {
@@ -280,8 +475,10 @@ interface PetState {
   agregarRegistroMedico: (petId: string, type: string, date: string, notes?: string) => Promise<void>;
   eliminarRegistroMedico: (petId: string, recordId: string) => Promise<void>;
   agregarRazaCatalogo: (nueva: Omit<BreedItem, '_id'>) => Promise<void>;
+  actualizarRazaCatalogo: (id: string, datos: Omit<BreedItem, '_id'>) => Promise<void>;
   eliminarRazaCatalogo: (id: string) => Promise<void>;
   agregarTipCatalogo: (nuevo: Omit<TipItem, '_id'>) => Promise<void>;
+  actualizarTipCatalogo: (id: string, datos: Omit<TipItem, '_id'>) => Promise<void>;
   eliminarTipCatalogo: (id: string) => Promise<void>;
 }
 
@@ -289,8 +486,8 @@ export const usePetStore = create<PetState>((set, get) => ({
   pets: leerJSON('ph_pets_invitado', mascotasIniciales),
   tasks: leerJSON('ph_tasks_invitado', tareasIniciales),
   medicalRecords: leerJSON('ph_medical_records', {}),
-  catalogRazas: leerJSON('ph_catalog_razas', razasPorDefecto),
-  catalogTips: leerJSON('ph_catalog_tips', tipsPorDefecto),
+  catalogRazas: normalizarListaRazas(leerJSON('ph_catalog_razas', razasPorDefecto)),
+  catalogTips: normalizarListaTips(leerJSON('ph_catalog_tips', tipsPorDefecto)),
 
   cargarCatalogo: async () => {
     if (!API_BASE) return;
@@ -303,12 +500,14 @@ export const usePetStore = create<PetState>((set, get) => ({
       const dataTips = await resTips.json();
 
       if (dataRazas.ok && Array.isArray(dataRazas.items)) {
-        set({ catalogRazas: dataRazas.items });
-        guardarJSON('ph_catalog_razas', dataRazas.items);
+        const razasLimpias = normalizarListaRazas(dataRazas.items);
+        set({ catalogRazas: razasLimpias });
+        guardarJSON('ph_catalog_razas', razasLimpias);
       }
       if (dataTips.ok && Array.isArray(dataTips.recomendaciones)) {
-        set({ catalogTips: dataTips.recomendaciones });
-        guardarJSON('ph_catalog_tips', dataTips.recomendaciones);
+        const tipsLimpios = normalizarListaTips(dataTips.recomendaciones);
+        set({ catalogTips: tipsLimpios });
+        guardarJSON('ph_catalog_tips', tipsLimpios);
       }
     } catch {
       // Usa el catálogo guardado en caso de desconexión
@@ -636,6 +835,33 @@ export const usePetStore = create<PetState>((set, get) => ({
     guardarJSON('ph_catalog_razas', nuevaLista);
   },
 
+  actualizarRazaCatalogo: async (id, datos) => {
+    if (API_BASE) {
+      try {
+        const response = await fetch(`${API_BASE}/catalog/razas/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(datos),
+        });
+        const data = await response.json();
+        if (data.ok && data.item) {
+          const nuevaLista = get().catalogRazas.map((r) => (r._id === id ? data.item : r));
+          set({ catalogRazas: nuevaLista });
+          guardarJSON('ph_catalog_razas', nuevaLista);
+          return;
+        }
+      } catch {
+        // Continúa en local
+      }
+    }
+
+    const nuevaLista = get().catalogRazas.map((r) =>
+      r._id === id ? { ...r, ...datos, _id: id } : r
+    );
+    set({ catalogRazas: nuevaLista });
+    guardarJSON('ph_catalog_razas', nuevaLista);
+  },
+
   eliminarRazaCatalogo: async (id) => {
     if (API_BASE) {
       try {
@@ -672,6 +898,33 @@ export const usePetStore = create<PetState>((set, get) => ({
 
     const tipLocal: TipItem = { ...nuevo, _id: `tip_${Date.now()}` };
     const nuevaLista = [...get().catalogTips, tipLocal];
+    set({ catalogTips: nuevaLista });
+    guardarJSON('ph_catalog_tips', nuevaLista);
+  },
+
+  actualizarTipCatalogo: async (id, datos) => {
+    if (API_BASE) {
+      try {
+        const response = await fetch(`${API_BASE}/catalog/recomendaciones/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(datos),
+        });
+        const data = await response.json();
+        if (data.ok && data.tip) {
+          const nuevaLista = get().catalogTips.map((t) => (t._id === id ? data.tip : t));
+          set({ catalogTips: nuevaLista });
+          guardarJSON('ph_catalog_tips', nuevaLista);
+          return;
+        }
+      } catch {
+        // Continúa en local
+      }
+    }
+
+    const nuevaLista = get().catalogTips.map((t) =>
+      t._id === id ? { ...t, ...datos, _id: id } : t
+    );
     set({ catalogTips: nuevaLista });
     guardarJSON('ph_catalog_tips', nuevaLista);
   },

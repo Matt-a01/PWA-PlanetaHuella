@@ -8,10 +8,24 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret_planeta_huella_2026';
 
 // Verifica si el documento en MongoDB tiene configurado el rol 'admin' (en 'role' o dentro de 'roles')
 const obtenerRolDesdeBD = (userDoc: { role?: string; roles?: string[] }): 'user' | 'admin' => {
-  if (userDoc.role === 'admin' || (Array.isArray(userDoc.roles) && userDoc.roles.includes('admin'))) {
+  const rolTexto = String(userDoc.role || '').toLowerCase();
+  const tieneAdminEnRoles =
+    Array.isArray(userDoc.roles) &&
+    userDoc.roles.some((r) => String(r).toLowerCase().includes('admin'));
+
+  if (rolTexto.includes('admin') || tieneAdminEnRoles) {
     return 'admin';
   }
   return 'user';
+};
+
+// Limpia el arreglo de roles en caso de que haya sido editado manualmente con comillas en MongoDB Atlas
+const obtenerRolesLimpios = (userDoc: { role?: string; roles?: string[] }): string[] => {
+  const rolPrincipal = obtenerRolDesdeBD(userDoc);
+  if (rolPrincipal === 'admin') {
+    return ['user', 'admin'];
+  }
+  return ['user'];
 };
 
 // POST /api/auth/register - Toda cuenta nueva se registra como 'user'; el rol 'admin' solo se otorga en BD
@@ -136,7 +150,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         fullName: user.fullName,
         email: user.email,
         role: rolActual,
-        roles: user.roles?.length ? user.roles : [rolActual],
+        roles: obtenerRolesLimpios(user),
         createdAt: user.createdAt,
       },
       token,
@@ -150,10 +164,20 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// GET /api/auth/user/:id - Consulta en tiempo real el rol del usuario en MongoDB por si fue modificado en BD
+// GET /api/auth/user/:id - Consulta en tiempo real el rol del usuario en MongoDB por ID o correo
 router.get('/user/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
+    const id = String(req.params.id || '');
+    const emailQuery = typeof req.query.email === 'string' ? req.query.email.trim().toLowerCase() : '';
+
+    let user = null;
+    if (id && !id.startsWith('usr_') && id.length === 24) {
+      user = await User.findById(id).select('-password');
+    }
+    if (!user && emailQuery) {
+      user = await User.findOne({ email: emailQuery }).select('-password');
+    }
+
     if (!user) {
       res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
       return;
@@ -168,12 +192,12 @@ router.get('/user/:id', async (req: Request, res: Response): Promise<void> => {
         fullName: user.fullName,
         email: user.email,
         role: rolActual,
-        roles: user.roles?.length ? user.roles : [rolActual],
+        roles: obtenerRolesLimpios(user),
         createdAt: user.createdAt,
       },
     });
   } catch {
-    res.status(400).json({ ok: false, error: 'ID de usuario no válido.' });
+    res.status(400).json({ ok: false, error: 'No se pudo consultar el usuario.' });
   }
 });
 
@@ -204,7 +228,7 @@ router.get('/me', async (req: Request, res: Response): Promise<void> => {
         fullName: user.fullName,
         email: user.email,
         role: rolActual,
-        roles: user.roles?.length ? user.roles : [rolActual],
+        roles: obtenerRolesLimpios(user),
         createdAt: user.createdAt,
       },
     });
