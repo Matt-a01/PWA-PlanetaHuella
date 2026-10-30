@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAuthStore } from '../store/useAuthStore';
+import { useAuthStore, esUsuarioAdmin } from '../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, ShieldCheck, LogOut, Database, Shield, RefreshCw } from 'lucide-react';
 
@@ -8,7 +8,7 @@ export default function Perfil() {
   const navigate = useNavigate();
   const [sincronizando, setSincronizando] = useState(false);
 
-  const esAdmin = user?.role === 'admin' || user?.roles?.includes('admin');
+  const esAdmin = esUsuarioAdmin(user);
 
   useEffect(() => {
     sincronizarRolDesdeBD();
@@ -47,7 +47,7 @@ export default function Perfil() {
           <div
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
               esAdmin
-                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                 : 'bg-slate-50 text-slate-700 border-slate-200'
             }`}
           >

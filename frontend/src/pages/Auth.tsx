@@ -82,7 +82,7 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] flex flex-col justify-center items-center p-4">
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center items-center p-4">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-md border border-gray-100 overflow-hidden">
         <div className="bg-gradient-to-b from-green-100/70 to-white pt-6 px-6 pb-3 text-center">
           <div className="inline-flex items-center gap-2 text-green-800 font-bold text-xl mb-1">
