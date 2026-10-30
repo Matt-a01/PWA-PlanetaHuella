@@ -188,30 +188,48 @@ export const loginUser = async (email: string, password: string): Promise<AuthRe
   };
 };
 
+const tieneRolAdmin = (u: { role?: string; roles?: string[] }): boolean => {
+  const rolTexto = String(u.role || '').toLowerCase();
+  const enArreglo =
+    Array.isArray(u.roles) && u.roles.some((r) => String(r).toLowerCase().includes('admin'));
+  return rolTexto.includes('admin') || enArreglo;
+};
+
 // Consulta el usuario directamente en MongoDB para reflejar cambios de rol hechos en la base de datos
-export const fetchUserFromDB = async (userId: string): Promise<AuthResponse['user'] | null> => {
-  if (API_BASE_URL && userId && !userId.startsWith('usr_')) {
+export const fetchUserFromDB = async (
+  userId: string,
+  email?: string
+): Promise<AuthResponse['user'] | null> => {
+  if (API_BASE_URL && (userId || email)) {
     try {
-      const response = await fetch(`${API_BASE_URL}/user/${userId}`);
+      const query = email ? `?email=${encodeURIComponent(email.trim().toLowerCase())}` : '';
+      const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(userId || '0')}${query}`);
       const data = await response.json();
       if (data.ok && data.user) {
-        return data.user;
+        const esAdmin = tieneRolAdmin(data.user);
+        return {
+          ...data.user,
+          role: esAdmin ? 'admin' : 'user',
+          roles: esAdmin ? ['user', 'admin'] : ['user'],
+        };
       }
     } catch {
       // Si no hay conexión con el servidor, verifica el registro local
     }
   }
 
-  const found = getLocalUsers().find((u) => u.id === userId);
+  const normalizedEmail = email?.trim().toLowerCase();
+  const found = getLocalUsers().find(
+    (u) => u.id === userId || (normalizedEmail && u.email === normalizedEmail)
+  );
   if (found) {
-    const rolCalculado: 'user' | 'admin' =
-      found.role === 'admin' || found.roles?.includes('admin') ? 'admin' : 'user';
+    const rolCalculado: 'user' | 'admin' = tieneRolAdmin(found) ? 'admin' : 'user';
     return {
       id: found.id,
       fullName: found.fullName,
       email: found.email,
       role: rolCalculado,
-      roles: found.roles || [rolCalculado],
+      roles: rolCalculado === 'admin' ? ['user', 'admin'] : ['user'],
       createdAt: found.createdAt,
     };
   }
