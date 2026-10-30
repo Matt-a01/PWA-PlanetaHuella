@@ -1,168 +1,230 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Plus, Bone, Droplet, Footprints, Scissors } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Plus, Bone, Droplet, Footprints, Scissors, User, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PetCard from '../components/PetCard';
 import TaskItem from '../components/TaskItem';
+import PetFormModal from '../components/PetFormModal';
+import PetDetailModal from '../components/PetDetailModal';
+import TaskFormModal from '../components/TaskFormModal';
 import { useAuthStore } from '../store/useAuthStore';
 import { usePetStore } from '../store/usePetStore';
 
 export default function Inicio() {
   const user = useAuthStore((state) => state.user);
-  const { pets, tasks, cargarDatos, agregarTarea, toggleTarea, eliminarTarea } = usePetStore();
-  const displayName = user?.fullName ? user.fullName.split(' ')[0] : 'Juan';
+  const { pets, tasks, cargarDatos, toggleTarea, eliminarTarea } = usePetStore();
+  const displayName = user?.fullName ? user.fullName.split(' ')[0] : 'Usuario';
 
-  const [nuevaActividad, setNuevaActividad] = useState('');
   const [mascotaSeleccionada, setMascotaSeleccionada] = useState('');
+  const [mascotaModalId, setMascotaModalId] = useState<string | null>(null);
+  const [modalAgregarMascota, setModalAgregarMascota] = useState(false);
+  const [modalAgregarTarea, setModalAgregarTarea] = useState(false);
 
   useEffect(() => {
     cargarDatos(user?.id);
   }, [cargarDatos, user?.id]);
 
-  useEffect(() => {
-    if (pets.length > 0 && !mascotaSeleccionada) {
-      setMascotaSeleccionada(pets[0]._id);
-    }
-  }, [pets, mascotaSeleccionada]);
+  // Determina automáticamente la mascota activa sin requerir efectos adicionales
+  const idMascotaActiva = pets.some((p) => p._id === mascotaSeleccionada)
+    ? mascotaSeleccionada
+    : pets[0]?._id || '';
+
+  const mascotaActiva = pets.find((p) => p._id === idMascotaActiva) || null;
+
+  // Filtra las tareas de hoy exclusivamente según la mascota escogida por el usuario
+  const tareasMascotaActiva = tasks.filter((tarea) => {
+    const pid = typeof tarea.petId === 'object' ? tarea.petId._id : tarea.petId;
+    return pid === idMascotaActiva;
+  });
 
   const obtenerIcono = (iconType: string) => {
     if (iconType === 'droplet') {
-      return { icon: <Droplet size={20} className="text-blue-500" />, bg: 'bg-blue-50' };
+      return { icon: <Droplet size={20} className="text-sky-600" />, bg: 'bg-sky-50' };
     }
     if (iconType === 'footprints') {
-      return { icon: <Footprints size={20} className="text-orange-500" />, bg: 'bg-orange-50' };
+      return { icon: <Footprints size={20} className="text-emerald-700" />, bg: 'bg-emerald-50' };
     }
     if (iconType === 'scissors') {
-      return { icon: <Scissors size={20} className="text-yellow-600" />, bg: 'bg-yellow-50' };
+      return { icon: <Scissors size={20} className="text-teal-700" />, bg: 'bg-teal-50' };
     }
-    return { icon: <Bone size={20} className="text-red-500" />, bg: 'bg-red-50' };
+    return { icon: <Bone size={20} className="text-green-700" />, bg: 'bg-green-50' };
   };
 
-  const manejarCrearTarea = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!nuevaActividad.trim() || !mascotaSeleccionada) return;
-    const petObj = pets.find((p) => p._id === mascotaSeleccionada);
-    await agregarTarea(
-      mascotaSeleccionada,
-      petObj?.name || 'Mascota',
-      nuevaActividad.trim(),
-      user?.id
-    );
-    setNuevaActividad('');
+  const abrirFichaMascota = (petId: string) => {
+    setMascotaSeleccionada(petId);
+    setMascotaModalId(petId);
   };
 
   return (
     <div className="p-5 pb-24 bg-[#F8FAFC] min-h-screen">
-      <header className="flex justify-between items-center mb-8 pt-2">
+      <header className="flex justify-between items-center mb-7 pt-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">¡Hola, {displayName}!</h1>
-          <p className="text-gray-500 text-sm">Qué bueno tenerte aquí</p>
+          <p className="text-gray-500 text-sm">Toca una mascota para ver o personalizar su ficha</p>
         </div>
         <Link
           to="/perfil"
-          className="w-12 h-12 rounded-full overflow-hidden border-2 border-green-100 flex items-center justify-center bg-green-100 text-green-700 font-bold hover:border-green-400 transition-colors"
+          className="w-12 h-12 rounded-full border-2 border-green-100 flex items-center justify-center bg-green-100 text-green-700 font-bold hover:border-green-400 transition-colors shrink-0"
         >
           {user?.fullName ? (
             <span>{user.fullName.charAt(0).toUpperCase()}</span>
           ) : (
-            <img
-              src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80"
-              alt="Perfil"
-            />
+            <User size={22} />
           )}
         </Link>
       </header>
 
+      {/* Cuadrícula 2x2 de mascotas */}
       <section className="mb-8">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold text-gray-900">Mis mascotas</h2>
-          <Link to="/mascotas" className="text-sm text-gray-500 font-medium">
-            Ver todas &gt;
+          <Link to="/mascotas" className="text-xs text-green-700 hover:underline font-semibold">
+            Gestionar todas &gt;
           </Link>
         </div>
 
-        <div className="flex overflow-x-auto pb-2 -mx-5 px-5 scrollbar-hide">
+        <div className="grid grid-cols-2 gap-3.5">
           {pets.map((pet) => (
             <PetCard
               key={pet._id}
               id={pet._id}
               name={pet.name}
-              age={`${pet.age} años`}
-              imageUrl={
-                pet.imageUrl ||
-                'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=150&q=80'
-              }
+              species={pet.species}
+              breed={pet.breed}
+              age={`${pet.age} ${pet.age === 1 ? 'año' : 'años'}`}
+              imageUrl={pet.imageUrl}
+              seleccionada={pet._id === idMascotaActiva}
+              onClick={() => abrirFichaMascota(pet._id)}
             />
           ))}
 
-          <Link
-            to="/AgregarMascota"
-            className="flex flex-col items-center justify-center min-w-[100px] h-[120px] bg-green-50 rounded-2xl p-2 border border-green-100 border-dashed cursor-pointer"
+          <button
+            type="button"
+            onClick={() => setModalAgregarMascota(true)}
+            className="flex flex-col items-center justify-center min-h-[205px] bg-green-50/70 hover:bg-green-50 rounded-3xl p-4 border-2 border-green-200/80 border-dashed transition-colors cursor-pointer"
           >
-            <div className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-2">
+            <div className="w-12 h-12 bg-green-100 text-green-700 rounded-full flex items-center justify-center mb-2.5">
               <Plus size={24} />
             </div>
-            <p className="text-xs font-semibold text-green-700">Agregar</p>
-          </Link>
+            <p className="text-sm font-bold text-green-800">Agregar mascota</p>
+            <p className="text-[11px] text-green-700/75 text-center mt-0.5">
+              Abrir sub-ventana de registro
+            </p>
+          </button>
         </div>
       </section>
 
+      {/* Tareas de hoy filtradas únicamente por el animal seleccionado */}
       <section>
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-bold text-gray-900">Tareas de hoy</h2>
-          <Link to="/mascotas" className="text-sm text-gray-500 font-medium">
-            Personalizar por mascota &gt;
-          </Link>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">
+              Tareas de hoy {mascotaActiva ? `• ${mascotaActiva.name}` : ''}
+            </h2>
+            <p className="text-xs text-gray-500">
+              Actividades asignadas únicamente a la mascota seleccionada
+            </p>
+          </div>
+
+          {mascotaActiva && (
+            <button
+              type="button"
+              onClick={() => setModalAgregarTarea(true)}
+              className="inline-flex items-center gap-1 bg-green-700 hover:bg-green-800 text-white px-3.5 py-2 rounded-full text-xs font-semibold transition-colors cursor-pointer shrink-0"
+            >
+              <Plus size={14} />
+              <span>Nueva tarea</span>
+            </button>
+          )}
         </div>
 
-        {/* Formulario rápido para agregar tareas personalizadas a cualquier mascota */}
+        {/* Selector rápido de animal para alternar sus tareas del día */}
         {pets.length > 0 && (
-          <form onSubmit={manejarCrearTarea} className="flex gap-2 mb-4">
-            <select
-              value={mascotaSeleccionada}
-              onChange={(e) => setMascotaSeleccionada(e.target.value)}
-              className="bg-white border border-gray-200 rounded-xl px-2.5 py-2 text-xs font-semibold text-gray-700 focus:outline-none focus:border-green-600"
-            >
-              {pets.map((p) => (
-                <option key={p._id} value={p._id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={nuevaActividad}
-              onChange={(e) => setNuevaActividad(e.target.value)}
-              placeholder="Nueva tarea (ej. Dar vitaminas)..."
-              className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-green-600"
-            />
-            <button
-              type="submit"
-              className="bg-green-700 hover:bg-green-800 text-white px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer"
-            >
-              + Añadir
-            </button>
-          </form>
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
+            {pets.map((pet) => {
+              const activa = pet._id === idMascotaActiva;
+              return (
+                <button
+                  key={pet._id}
+                  type="button"
+                  onClick={() => setMascotaSeleccionada(pet._id)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer border ${
+                    activa
+                      ? 'bg-green-700 text-white border-green-700 shadow-xs'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                  }`}
+                >
+                  {pet.name} ({pet.species})
+                </button>
+              );
+            })}
+          </div>
         )}
 
         <div className="flex flex-col">
-          {tasks.map((tarea) => {
-            const { icon, bg } = obtenerIcono(tarea.iconType);
-            const nombreMascota = typeof tarea.petId === 'object' ? tarea.petId.name : 'Mascota';
-            return (
-              <TaskItem
-                key={tarea._id}
-                taskName={tarea.title}
-                petName={nombreMascota}
-                icon={icon}
-                iconBgColor={bg}
-                isCompleted={tarea.isCompleted}
-                onToggle={() => toggleTarea(tarea._id, user?.id)}
-                onDelete={() => eliminarTarea(tarea._id, user?.id)}
-              />
-            );
-          })}
+          {!mascotaActiva ? (
+            <div className="bg-white rounded-2xl p-6 text-center border border-gray-100">
+              <p className="text-sm text-gray-500">
+                Registra tu primera mascota para organizar sus tareas diarias.
+              </p>
+            </div>
+          ) : tareasMascotaActiva.length === 0 ? (
+            <div className="bg-white rounded-2xl p-6 text-center border border-gray-100">
+              <Sparkles size={22} className="mx-auto text-green-600 mb-2" />
+              <p className="text-sm font-semibold text-gray-800">
+                No hay tareas pendientes para {mascotaActiva.name}
+              </p>
+              <p className="text-xs text-gray-500 mt-1 mb-3">
+                Puedes añadir actividades sugeridas según su raza ({mascotaActiva.breed}).
+              </p>
+              <button
+                type="button"
+                onClick={() => setModalAgregarTarea(true)}
+                className="inline-flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-800 border border-green-200 px-3.5 py-2 rounded-full text-xs font-semibold cursor-pointer"
+              >
+                <Plus size={14} />
+                <span>Agregar tarea para {mascotaActiva.name}</span>
+              </button>
+            </div>
+          ) : (
+            tareasMascotaActiva.map((tarea) => {
+              const { icon, bg } = obtenerIcono(tarea.iconType);
+              return (
+                <TaskItem
+                  key={tarea._id}
+                  taskName={tarea.title}
+                  petName={mascotaActiva.name}
+                  icon={icon}
+                  iconBgColor={bg}
+                  isCompleted={tarea.isCompleted}
+                  onToggle={() => toggleTarea(tarea._id, user?.id)}
+                  onDelete={() => eliminarTarea(tarea._id, user?.id)}
+                />
+              );
+            })
+          )}
         </div>
       </section>
+
+      {/* Ventana flotante de información y personalización de la mascota */}
+      <PetDetailModal
+        abierto={Boolean(mascotaModalId)}
+        onCerrar={() => setMascotaModalId(null)}
+        mascotaId={mascotaModalId}
+      />
+
+      {/* Sub-ventana flotante para agregar mascota */}
+      <PetFormModal
+        abierto={modalAgregarMascota}
+        onCerrar={() => setModalAgregarMascota(false)}
+        mascotaEditar={null}
+      />
+
+      {/* Sub-ventana flotante para agregar tarea a la mascota seleccionada */}
+      <TaskFormModal
+        abierto={modalAgregarTarea}
+        onCerrar={() => setModalAgregarTarea(false)}
+        mascota={mascotaActiva}
+      />
     </div>
   );
 }
