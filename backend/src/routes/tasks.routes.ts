@@ -1,11 +1,16 @@
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import Task from '../models/Task.js';
 import Pet from '../models/Pet.js';
+import { requireAuth } from '../middlewares/auth.middleware.js';
+import { createTaskSchema, objectIdSchema } from '../schemas/validation.schemas.js';
 
 const router = express.Router();
 
+// Todas las rutas de tareas requieren sesión JWT válida
+router.use(requireAuth);
+
 const detectarIcono = (titulo: string, iconoManual?: string): string => {
-  if (iconoManual) return iconoManual;
+  if (iconoManual && iconoManual.length > 0) return iconoManual;
   const t = titulo.toLowerCase();
   if (t.includes('agua') || t.includes('bebedero') || t.includes('humedad') || t.includes('filtro')) {
     return 'droplet';
@@ -19,57 +24,99 @@ const detectarIcono = (titulo: string, iconoManual?: string): string => {
   return 'bone';
 };
 
-// GET /api/tasks?ownerId=... - Obtiene las tareas vinculadas a las mascotas del usuario
-router.get('/', async (req, res) => {
+// GET /api/tasks - Obtiene únicamente las tareas vinculadas a las mascotas del usuario autenticado
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { ownerId } = req.query;
-    if (!ownerId) {
-      res.json({ ok: true, tasks: [] });
+    const petIdQuery = typeof req.query.petId === 'string' ? req.query.petId.trim() : '';
+
+    if (petIdQuery) {
+      const petIdValido = objectIdSchema.parse(petIdQuery);
+      const mascota = await Pet.findById(petIdValido).select('_id ownerId');
+      if (!mascota) {
+        res.status(404).json({ ok: false, error: 'Mascota asociada no encontrada.' });
+        return;
+      }
+      if (String(mascota.ownerId) !== req.user!.id) {
+        res.status(403).json({
+          ok: false,
+          error: 'No tienes permiso para consultar las tareas de esta mascota.',
+        });
+        return;
+      }
+
+      const tasks = await Task.find({ petId: mascota._id }).populate('petId', 'name species');
+      res.json({ ok: true, tasks });
       return;
     }
 
-    const mascotasUsuario = await Pet.find({ ownerId: String(ownerId) }).select('_id');
+    const mascotasUsuario = await Pet.find({ ownerId: req.user!.id }).select('_id');
     const idsMascotas = mascotasUsuario.map((m) => m._id);
 
-    const tasks = await Task.find({ petId: { $in: idsMascotas } }).populate('petId', 'name species');
+    const tasks = await Task.find({ petId: { $in: idsMascotas } }).populate(
+      'petId',
+      'name species'
+    );
     res.json({ ok: true, tasks });
   } catch (error) {
-    console.error('Error al obtener tareas:', error);
-    res.status(500).json({ ok: false, error: 'Error al obtener las tareas.' });
+    next(error);
   }
 });
 
-// POST /api/tasks - Registra una tarea personalizada para una mascota específica
-router.post('/', async (req, res) => {
+// POST /api/tasks - Registra una tarea personalizada verificando que la mascota pertenezca al usuario
+router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { title, iconType, petId } = req.body;
+    const { title, iconType, petId } = createTaskSchema.parse(req.body);
 
-    if (!title || !petId) {
-      res.status(400).json({ ok: false, error: 'El título y la mascota son obligatorios.' });
+    const mascota = await Pet.findById(petId).select('_id ownerId');
+    if (!mascota) {
+      res.status(404).json({ ok: false, error: 'Mascota asociada no encontrada.' });
+      return;
+    }
+
+    if (String(mascota.ownerId) !== req.user!.id) {
+      res.status(403).json({
+        ok: false,
+        error: 'No tienes permiso para agregar tareas a esta mascota.',
+      });
       return;
     }
 
     const nuevaTarea = await Task.create({
-      title: title.trim(),
+      title,
       iconType: detectarIcono(title, iconType),
       isCompleted: false,
-      petId,
+      petId: mascota._id,
     });
 
     const tareaConMascota = await nuevaTarea.populate('petId', 'name species');
     res.status(201).json({ ok: true, task: tareaConMascota });
   } catch (error) {
-    console.error('Error al crear tarea:', error);
-    res.status(500).json({ ok: false, error: 'Error al crear la tarea.' });
+    next(error);
   }
 });
 
-// PATCH /api/tasks/:id - Alterna el estado completado/pendiente de una tarea
-router.patch('/:id', async (req, res) => {
+// PATCH /api/tasks/:id - Alterna el estado completado/pendiente verificando propiedad de la mascota
+router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tarea = await Task.findById(req.params.id);
+    const taskId = objectIdSchema.parse(req.params.id);
+    const tarea = await Task.findById(taskId);
+
     if (!tarea) {
       res.status(404).json({ ok: false, error: 'Tarea no encontrada.' });
+      return;
+    }
+
+    const mascota = await Pet.findById(tarea.petId).select('_id ownerId');
+    if (!mascota) {
+      res.status(404).json({ ok: false, error: 'Mascota asociada no encontrada.' });
+      return;
+    }
+
+    if (String(mascota.ownerId) !== req.user!.id) {
+      res.status(403).json({
+        ok: false,
+        error: 'No tienes permiso para modificar esta tarea.',
+      });
       return;
     }
 
@@ -79,19 +126,39 @@ router.patch('/:id', async (req, res) => {
     const tareaActualizada = await tarea.populate('petId', 'name species');
     res.json({ ok: true, task: tareaActualizada });
   } catch (error) {
-    console.error('Error al actualizar tarea:', error);
-    res.status(500).json({ ok: false, error: 'Error al actualizar la tarea.' });
+    next(error);
   }
 });
 
-// DELETE /api/tasks/:id - Elimina una tarea del perfil de la mascota
-router.delete('/:id', async (req, res) => {
+// DELETE /api/tasks/:id - Elimina una tarea verificando propiedad de la mascota asociada
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    await Task.findByIdAndDelete(req.params.id);
+    const taskId = objectIdSchema.parse(req.params.id);
+    const tarea = await Task.findById(taskId);
+
+    if (!tarea) {
+      res.status(404).json({ ok: false, error: 'Tarea no encontrada.' });
+      return;
+    }
+
+    const mascota = await Pet.findById(tarea.petId).select('_id ownerId');
+    if (!mascota) {
+      res.status(404).json({ ok: false, error: 'Mascota asociada no encontrada.' });
+      return;
+    }
+
+    if (String(mascota.ownerId) !== req.user!.id) {
+      res.status(403).json({
+        ok: false,
+        error: 'No tienes permiso para eliminar esta tarea.',
+      });
+      return;
+    }
+
+    await tarea.deleteOne();
     res.json({ ok: true, message: 'Tarea eliminada.' });
   } catch (error) {
-    console.error('Error al eliminar tarea:', error);
-    res.status(500).json({ ok: false, error: 'Error al eliminar la tarea.' });
+    next(error);
   }
 });
 
