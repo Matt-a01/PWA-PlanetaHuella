@@ -1,6 +1,17 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, PawPrint, AlertCircle, CheckCircle2, Heart } from 'lucide-react';
+import {
+  Mail,
+  Lock,
+  User,
+  Eye,
+  EyeOff,
+  PawPrint,
+  AlertCircle,
+  CheckCircle2,
+  Heart,
+  Info,
+} from 'lucide-react';
 import { loginUser, registerUser } from '../services/authService';
 import { useAuthStore } from '../store/useAuthStore';
 import heroImg from '../assets/landing-hero.jpg';
@@ -23,17 +34,26 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const switchMode = (newMode: 'login' | 'register') => {
     setMode(newMode);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setInfoMessage(null);
+  };
+
+  const handleOAuthUnavailable = () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setInfoMessage('Inicio con Google/Apple disponible próximamente. Usa tu correo electrónico.');
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
+    setInfoMessage(null);
 
     if (mode === 'register') {
       if (!fullName.trim()) {
@@ -72,10 +92,12 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
             : '¡Bienvenido de nuevo! Redirigiendo...'
         );
         setAuth(response.user, response.token);
-        setTimeout(() => navigate('/inicio'), 800);
+        setTimeout(() => navigate('/inicio', { replace: true }), 400);
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Error en la conexión con el servidor.');
+    } catch (err: unknown) {
+      const mensaje =
+        err instanceof Error ? err.message : 'Error en la conexión con el servidor.';
+      setErrorMessage(mensaje);
     } finally {
       setLoading(false);
     }
@@ -128,6 +150,13 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
             <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
               <AlertCircle size={16} className="shrink-0 text-red-500" />
               <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {infoMessage && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-center gap-2">
+              <Info size={16} className="shrink-0 text-amber-600" />
+              <span>{infoMessage}</span>
             </div>
           )}
 
@@ -217,17 +246,19 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
             <div className="flex gap-3 mt-2">
               <button
                 type="button"
-                onClick={() => navigate('/inicio')}
-                className="flex-1 py-2.5 px-4 border border-gray-200 rounded-xl text-xs font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 flex items-center justify-center gap-2 cursor-pointer"
+                aria-disabled="true"
+                onClick={handleOAuthUnavailable}
+                className="flex-1 py-2.5 px-4 border border-gray-200 rounded-xl text-xs font-medium text-gray-400 bg-gray-50/80 flex items-center justify-center gap-2 cursor-not-allowed"
               >
-                <span className="font-bold text-red-500">G</span> Google
+                <span className="font-bold text-red-400">G</span> Google
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/inicio')}
-                className="flex-1 py-2.5 px-4 border border-gray-200 rounded-xl text-xs font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 flex items-center justify-center gap-2 cursor-pointer"
+                aria-disabled="true"
+                onClick={handleOAuthUnavailable}
+                className="flex-1 py-2.5 px-4 border border-gray-200 rounded-xl text-xs font-medium text-gray-400 bg-gray-50/80 flex items-center justify-center gap-2 cursor-not-allowed"
               >
-                <span className="font-bold text-gray-900"></span> Apple
+                <span className="font-bold text-gray-500"></span> Apple
               </button>
             </div>
           </div>
