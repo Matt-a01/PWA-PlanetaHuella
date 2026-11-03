@@ -1,51 +1,104 @@
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import MedicalRecord from '../models/MedicalRecord.js';
+import Pet from '../models/Pet.js';
+import { requireAuth } from '../middlewares/auth.middleware.js';
+import {
+  createMedicalRecordSchema,
+  objectIdSchema,
+} from '../schemas/validation.schemas.js';
 
 const router = express.Router();
 
-// GET /api/medical/:petId - Consulta el historial médico de una mascota ordenado por fecha
-router.get('/:petId', async (req, res) => {
+// Todas las rutas de historial médico requieren sesión JWT válida
+router.use(requireAuth);
+
+// GET /api/medical/:petId - Consulta el historial médico verificando propiedad de la mascota
+router.get('/:petId', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const records = await MedicalRecord.find({ petId: req.params.petId }).sort({ date: -1 });
+    const petId = objectIdSchema.parse(req.params.petId);
+    const mascota = await Pet.findById(petId).select('_id ownerId');
+
+    if (!mascota) {
+      res.status(404).json({ ok: false, error: 'Mascota no encontrada.' });
+      return;
+    }
+
+    if (String(mascota.ownerId) !== req.user!.id) {
+      res.status(403).json({
+        ok: false,
+        error: 'No tienes permiso para consultar el historial médico de esta mascota.',
+      });
+      return;
+    }
+
+    const records = await MedicalRecord.find({ petId: mascota._id }).sort({ date: -1 });
     res.json({ ok: true, records });
   } catch (error) {
-    console.error('Error al obtener historial médico:', error);
-    res.status(500).json({ ok: false, error: 'Error al obtener el historial médico.' });
+    next(error);
   }
 });
 
-// POST /api/medical - Registra una vacuna, desparasitación o cita veterinaria
-router.post('/', async (req, res) => {
+// POST /api/medical - Registra una vacuna, desparasitación o cita verificando propiedad de la mascota
+router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { type, date, notes, petId } = req.body;
+    const { type, date, notes, petId } = createMedicalRecordSchema.parse(req.body);
 
-    if (!type || !date || !petId) {
-      res.status(400).json({ ok: false, error: 'Tipo, fecha y mascota son obligatorios.' });
+    const mascota = await Pet.findById(petId).select('_id ownerId');
+    if (!mascota) {
+      res.status(404).json({ ok: false, error: 'Mascota asociada no encontrada.' });
+      return;
+    }
+
+    if (String(mascota.ownerId) !== req.user!.id) {
+      res.status(403).json({
+        ok: false,
+        error: 'No tienes permiso para agregar registros médicos a esta mascota.',
+      });
       return;
     }
 
     const nuevoRegistro = await MedicalRecord.create({
       type,
       date: new Date(date),
-      notes: notes || '',
-      petId,
+      notes,
+      petId: mascota._id,
     });
 
     res.status(201).json({ ok: true, record: nuevoRegistro });
   } catch (error) {
-    console.error('Error al guardar registro médico:', error);
-    res.status(500).json({ ok: false, error: 'Error al guardar el registro médico.' });
+    next(error);
   }
 });
 
-// DELETE /api/medical/:id - Elimina un registro médico
-router.delete('/:id', async (req, res) => {
+// DELETE /api/medical/:id - Elimina un registro médico verificando propiedad de la mascota asociada
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    await MedicalRecord.findByIdAndDelete(req.params.id);
+    const recordId = objectIdSchema.parse(req.params.id);
+    const registro = await MedicalRecord.findById(recordId);
+
+    if (!registro) {
+      res.status(404).json({ ok: false, error: 'Registro médico no encontrado.' });
+      return;
+    }
+
+    const mascota = await Pet.findById(registro.petId).select('_id ownerId');
+    if (!mascota) {
+      res.status(404).json({ ok: false, error: 'Mascota asociada no encontrada.' });
+      return;
+    }
+
+    if (String(mascota.ownerId) !== req.user!.id) {
+      res.status(403).json({
+        ok: false,
+        error: 'No tienes permiso para eliminar este registro médico.',
+      });
+      return;
+    }
+
+    await registro.deleteOne();
     res.json({ ok: true, message: 'Registro médico eliminado.' });
   } catch (error) {
-    console.error('Error al eliminar registro médico:', error);
-    res.status(500).json({ ok: false, error: 'Error al eliminar el registro médico.' });
+    next(error);
   }
 });
 

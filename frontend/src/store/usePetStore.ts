@@ -1,14 +1,12 @@
 import { create } from 'zustand';
-
-const isLocalhost =
-  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-const rawEnvUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim().replace(/\/$/, '');
-const API_BASE = rawEnvUrl
-  ? rawEnvUrl.replace(/\/api\/auth$/, '/api').replace(/(?<!\/api)$/, '/api')
-  : isLocalhost
-    ? 'http://localhost:3000/api'
-    : '';
+import {
+  apiGet,
+  apiPost,
+  apiPut,
+  apiPatch,
+  apiDelete,
+  ApiError,
+} from '../services/apiClient';
 
 export interface Pet {
   _id: string;
@@ -400,36 +398,6 @@ const normalizarListaTips = (lista: any[]): TipItem[] => {
   }));
 };
 
-const mascotasIniciales: Pet[] = [
-  {
-    _id: 'luna',
-    name: 'Luna',
-    species: 'Perro',
-    breed: 'Golden Retriever',
-    age: 3,
-    gender: 'Hembra',
-    characteristics: 'Muy juguetona y de pelaje largo',
-    imageUrl: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=200&q=80',
-  },
-  {
-    _id: 'milo',
-    name: 'Milo',
-    species: 'Gato',
-    breed: 'Europeo',
-    age: 2,
-    gender: 'Macho',
-    characteristics: 'Tranquilo, le gusta dormir junto a la ventana',
-    imageUrl: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=200&q=80',
-  },
-];
-
-const tareasIniciales: Task[] = [
-  { _id: 't1', title: 'Dar alimento balanceado', isCompleted: false, iconType: 'bone', petId: { _id: 'luna', name: 'Luna' } },
-  { _id: 't2', title: 'Limpiar caja de arena', isCompleted: false, iconType: 'scissors', petId: { _id: 'milo', name: 'Milo' } },
-  { _id: 't3', title: 'Paseo diario de 40 min', isCompleted: false, iconType: 'footprints', petId: { _id: 'luna', name: 'Luna' } },
-  { _id: 't4', title: 'Cepillar pelaje largo', isCompleted: false, iconType: 'scissors', petId: { _id: 'luna', name: 'Luna' } },
-];
-
 const detectarIcono = (titulo: string): string => {
   const t = titulo.toLowerCase();
   if (t.includes('agua') || t.includes('bebedero') || t.includes('humedad') || t.includes('filtro')) return 'droplet';
@@ -438,11 +406,12 @@ const detectarIcono = (titulo: string): string => {
   return 'bone';
 };
 
-// Persistencia local por usuario como respaldo cuando el backend no está conectado
+// Persistencia local aislada por cuenta autenticada
 const leerJSON = <T,>(clave: string, respaldo: T): T => {
   try {
+    if (typeof localStorage === 'undefined') return respaldo;
     const raw = localStorage.getItem(clave);
-    return raw ? JSON.parse(raw) : respaldo;
+    return raw ? (JSON.parse(raw) as T) : respaldo;
   } catch {
     return respaldo;
   }
@@ -450,9 +419,23 @@ const leerJSON = <T,>(clave: string, respaldo: T): T => {
 
 const guardarJSON = (clave: string, valor: unknown) => {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(clave, JSON.stringify(valor));
   } catch {
-    // Evita bloquear la interfaz si el almacenamiento local está lleno
+    // Evita bloquear la interfaz si el almacenamiento local alcanza su límite
+  }
+};
+
+const obtenerUserIdActivo = (ownerId?: string): string | null => {
+  if (ownerId && ownerId.trim().length > 0) return ownerId.trim();
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const rawUser = localStorage.getItem('ph_user');
+    if (!rawUser) return null;
+    const parsed = JSON.parse(rawUser) as { id?: string } | null;
+    return parsed?.id ? String(parsed.id) : null;
+  } catch {
+    return null;
   }
 };
 
@@ -462,6 +445,7 @@ interface PetState {
   medicalRecords: Record<string, MedicalRecordItem[]>;
   catalogRazas: BreedItem[];
   catalogTips: TipItem[];
+  resetStore: () => void;
   cargarDatos: (ownerId?: string) => Promise<void>;
   cargarCatalogo: () => Promise<void>;
   obtenerTareasSugeridas: (species: string, breed: string) => string[];
@@ -482,22 +466,32 @@ interface PetState {
   eliminarTipCatalogo: (id: string) => Promise<void>;
 }
 
+const uidInicial = obtenerUserIdActivo();
+
 export const usePetStore = create<PetState>((set, get) => ({
-  pets: leerJSON('ph_pets_invitado', mascotasIniciales),
-  tasks: leerJSON('ph_tasks_invitado', tareasIniciales),
-  medicalRecords: leerJSON('ph_medical_records', {}),
+  pets: uidInicial ? leerJSON<Pet[]>(`ph_pets_${uidInicial}`, []) : [],
+  tasks: uidInicial ? leerJSON<Task[]>(`ph_tasks_${uidInicial}`, []) : [],
+  medicalRecords: uidInicial
+    ? leerJSON<Record<string, MedicalRecordItem[]>>(`ph_medical_${uidInicial}`, {})
+    : {},
   catalogRazas: normalizarListaRazas(leerJSON('ph_catalog_razas', razasPorDefecto)),
   catalogTips: normalizarListaTips(leerJSON('ph_catalog_tips', tipsPorDefecto)),
 
+  // Limpia por completo las mascotas, tareas y registros médicos en memoria al cerrar sesión
+  resetStore: () => {
+    set({
+      pets: [],
+      tasks: [],
+      medicalRecords: {},
+    });
+  },
+
   cargarCatalogo: async () => {
-    if (!API_BASE) return;
     try {
-      const [resRazas, resTips] = await Promise.all([
-        fetch(`${API_BASE}/catalog/razas`),
-        fetch(`${API_BASE}/catalog/recomendaciones`),
+      const [dataRazas, dataTips] = await Promise.all([
+        apiGet<{ ok: boolean; items: BreedItem[] }>('/catalog/razas'),
+        apiGet<{ ok: boolean; recomendaciones: TipItem[] }>('/catalog/recomendaciones'),
       ]);
-      const dataRazas = await resRazas.json();
-      const dataTips = await resTips.json();
 
       if (dataRazas.ok && Array.isArray(dataRazas.items)) {
         const razasLimpias = normalizarListaRazas(dataRazas.items);
@@ -510,7 +504,7 @@ export const usePetStore = create<PetState>((set, get) => ({
         guardarJSON('ph_catalog_tips', tipsLimpios);
       }
     } catch {
-      // Usa el catálogo guardado en caso de desconexión
+      // Mantiene el catálogo en caché local si no hay conectividad
     }
   },
 
@@ -543,125 +537,138 @@ export const usePetStore = create<PetState>((set, get) => ({
   },
 
   cargarDatos: async (ownerId?: string) => {
-    const clavePets = `ph_pets_${ownerId || 'invitado'}`;
-    const claveTasks = `ph_tasks_${ownerId || 'invitado'}`;
+    const uid = obtenerUserIdActivo(ownerId);
+    if (!uid) {
+      set({ pets: [], tasks: [], medicalRecords: {} });
+      await get().cargarCatalogo();
+      return;
+    }
 
-    const guardadasPets = leerJSON<Pet[] | null>(clavePets, null);
-    const guardadasTasks = leerJSON<Task[] | null>(claveTasks, null);
+    const clavePets = `ph_pets_${uid}`;
+    const claveTasks = `ph_tasks_${uid}`;
+    const claveMedical = `ph_medical_${uid}`;
 
-    if (guardadasPets) set({ pets: guardadasPets });
-    if (guardadasTasks) set({ tasks: guardadasTasks });
+    set({
+      pets: leerJSON<Pet[]>(clavePets, []),
+      tasks: leerJSON<Task[]>(claveTasks, []),
+      medicalRecords: leerJSON<Record<string, MedicalRecordItem[]>>(claveMedical, {}),
+    });
 
     await get().cargarCatalogo();
 
-    if (!API_BASE || !ownerId) return;
     try {
-      const [resPets, resTasks] = await Promise.all([
-        fetch(`${API_BASE}/pets?ownerId=${ownerId}`),
-        fetch(`${API_BASE}/tasks?ownerId=${ownerId}`),
+      const [dataPets, dataTasks] = await Promise.all([
+        apiGet<{ ok: boolean; pets: Pet[] }>('/pets'),
+        apiGet<{ ok: boolean; tasks: Task[] }>('/tasks'),
       ]);
 
-      const dataPets = await resPets.json();
-      const dataTasks = await resTasks.json();
-
-      if (dataPets.ok && Array.isArray(dataPets.pets) && dataPets.pets.length > 0) {
+      // Acepta arreglos vacíos [] cuando la cuenta es nueva o se eliminó la última mascota
+      if (dataPets.ok && Array.isArray(dataPets.pets)) {
         set({ pets: dataPets.pets });
         guardarJSON(clavePets, dataPets.pets);
       }
-      if (dataTasks.ok && Array.isArray(dataTasks.tasks) && dataTasks.tasks.length > 0) {
+      if (dataTasks.ok && Array.isArray(dataTasks.tasks)) {
         set({ tasks: dataTasks.tasks });
         guardarJSON(claveTasks, dataTasks.tasks);
       }
     } catch {
-      // Mantiene los datos locales del usuario
+      // Mantiene la caché del usuario activo si falla la conexión
     }
   },
 
   agregarMascota: async (nueva, ownerId, customTasks) => {
-    const idUsuario = ownerId || '000000000000000000000001';
-    const clavePets = `ph_pets_${ownerId || 'invitado'}`;
-    const claveTasks = `ph_tasks_${ownerId || 'invitado'}`;
+    const uid = obtenerUserIdActivo(ownerId);
+    const clavePets = uid ? `ph_pets_${uid}` : null;
+    const claveTasks = uid ? `ph_tasks_${uid}` : null;
+
     const tareasElegidas =
       customTasks && customTasks.length > 0
         ? customTasks
         : get().obtenerTareasSugeridas(nueva.species, nueva.breed);
 
-    if (API_BASE) {
-      try {
-        const response = await fetch(`${API_BASE}/pets`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...nueva, ownerId: idUsuario, customTasks: tareasElegidas }),
-        });
-        const data = await response.json();
-        if (data.ok && data.pet) {
-          const nuevaLista = [...get().pets, data.pet];
-          set({ pets: nuevaLista });
-          guardarJSON(clavePets, nuevaLista);
-          await get().cargarDatos(ownerId);
-          return;
-        }
-      } catch {
-        // Continúa con guardado local
+    const payload = {
+      name: nueva.name,
+      species: nueva.species,
+      breed: nueva.breed,
+      age: nueva.age,
+      gender: nueva.gender,
+      characteristics: nueva.characteristics ?? '',
+      imageUrl: nueva.imageUrl ?? '',
+      customTasks: tareasElegidas,
+    };
+
+    try {
+      const data = await apiPost<{ ok: boolean; pet: Pet }>('/pets', payload);
+      if (data.ok && data.pet) {
+        const nuevaLista = [...get().pets, data.pet];
+        set({ pets: nuevaLista });
+        if (clavePets) guardarJSON(clavePets, nuevaLista);
+        await get().cargarDatos(uid ?? undefined);
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.isNetworkError && uid) {
+        const nuevoId = `temp_${Date.now()}`;
+        const mascotaLocal: Pet = { ...nueva, _id: nuevoId };
+        const nuevasTareasLocal: Task[] = tareasElegidas.map((titulo, idx) => ({
+          _id: `${nuevoId}_t_${idx}`,
+          title: titulo,
+          isCompleted: false,
+          iconType: detectarIcono(titulo),
+          petId: { _id: nuevoId, name: nueva.name },
+        }));
+
+        const listaPets = [...get().pets, mascotaLocal];
+        const listaTasks = [...get().tasks, ...nuevasTareasLocal];
+        set({ pets: listaPets, tasks: listaTasks });
+        if (clavePets) guardarJSON(clavePets, listaPets);
+        if (claveTasks) guardarJSON(claveTasks, listaTasks);
       }
     }
-
-    const nuevoId = String(Date.now());
-    const mascotaLocal: Pet = { ...nueva, _id: nuevoId, ownerId: idUsuario };
-    const nuevasTareasLocal: Task[] = tareasElegidas.map((titulo, idx) => ({
-      _id: `${nuevoId}_t_${idx}`,
-      title: titulo,
-      isCompleted: false,
-      iconType: detectarIcono(titulo),
-      petId: { _id: nuevoId, name: nueva.name },
-    }));
-
-    const listaPets = [...get().pets, mascotaLocal];
-    const listaTasks = [...get().tasks, ...nuevasTareasLocal];
-    set({ pets: listaPets, tasks: listaTasks });
-    guardarJSON(clavePets, listaPets);
-    guardarJSON(claveTasks, listaTasks);
   },
 
   actualizarMascota: async (id, datos, ownerId) => {
-    const idUsuario = ownerId || '000000000000000000000001';
-    const clavePets = `ph_pets_${ownerId || 'invitado'}`;
+    const uid = obtenerUserIdActivo(ownerId);
+    const clavePets = uid ? `ph_pets_${uid}` : null;
 
-    if (API_BASE) {
-      try {
-        const response = await fetch(`${API_BASE}/pets/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...datos, ownerId: idUsuario }),
-        });
-        const data = await response.json();
-        if (data.ok && data.pet) {
-          const listaActualizada = get().pets.map((p) => (p._id === id ? data.pet : p));
-          set({ pets: listaActualizada });
-          guardarJSON(clavePets, listaActualizada);
-          return;
-        }
-      } catch {
-        // Continúa en local
+    const payload = {
+      name: datos.name,
+      species: datos.species,
+      breed: datos.breed,
+      age: datos.age,
+      gender: datos.gender,
+      characteristics: datos.characteristics ?? '',
+      imageUrl: datos.imageUrl ?? '',
+    };
+
+    try {
+      const data = await apiPut<{ ok: boolean; pet: Pet }>(`/pets/${id}`, payload);
+      if (data.ok && data.pet) {
+        const listaActualizada = get().pets.map((p) => (p._id === id ? data.pet : p));
+        set({ pets: listaActualizada });
+        if (clavePets) guardarJSON(clavePets, listaActualizada);
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.isNetworkError && uid) {
+        const listaActualizada = get().pets.map((p) =>
+          p._id === id ? { ...p, ...datos, _id: id } : p
+        );
+        set({ pets: listaActualizada });
+        if (clavePets) guardarJSON(clavePets, listaActualizada);
       }
     }
-
-    const listaActualizada = get().pets.map((p) =>
-      p._id === id ? { ...p, ...datos, _id: id, ownerId: idUsuario } : p
-    );
-    set({ pets: listaActualizada });
-    guardarJSON(clavePets, listaActualizada);
   },
 
   eliminarMascota: async (id, ownerId) => {
-    const clavePets = `ph_pets_${ownerId || 'invitado'}`;
-    const claveTasks = `ph_tasks_${ownerId || 'invitado'}`;
+    const uid = obtenerUserIdActivo(ownerId);
+    const clavePets = uid ? `ph_pets_${uid}` : null;
+    const claveTasks = uid ? `ph_tasks_${uid}` : null;
+    const claveMedical = uid ? `ph_medical_${uid}` : null;
 
-    if (API_BASE) {
-      try {
-        await fetch(`${API_BASE}/pets/${id}`, { method: 'DELETE' });
-      } catch {
-        // Continúa en local
+    try {
+      await apiDelete<{ ok: boolean }>(`/pets/${id}`);
+    } catch (error) {
+      if (!(error instanceof ApiError && error.isNetworkError)) {
+        return;
       }
     }
 
@@ -670,133 +677,154 @@ export const usePetStore = create<PetState>((set, get) => ({
       const pid = typeof t.petId === 'object' ? t.petId._id : t.petId;
       return pid !== id;
     });
-    set({ pets: listaPets, tasks: listaTasks });
-    guardarJSON(clavePets, listaPets);
-    guardarJSON(claveTasks, listaTasks);
+    const registrosRestantes = { ...get().medicalRecords };
+    delete registrosRestantes[id];
+
+    set({ pets: listaPets, tasks: listaTasks, medicalRecords: registrosRestantes });
+    if (clavePets) guardarJSON(clavePets, listaPets);
+    if (claveTasks) guardarJSON(claveTasks, listaTasks);
+    if (claveMedical) guardarJSON(claveMedical, registrosRestantes);
   },
 
   agregarTarea: async (petId, petName, title, ownerId) => {
-    const claveTasks = `ph_tasks_${ownerId || 'invitado'}`;
+    const uid = obtenerUserIdActivo(ownerId);
+    const claveTasks = uid ? `ph_tasks_${uid}` : null;
     const iconType = detectarIcono(title);
 
-    if (API_BASE) {
-      try {
-        const response = await fetch(`${API_BASE}/tasks`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ petId, title, iconType }),
-        });
-        const data = await response.json();
-        if (data.ok && data.task) {
-          const nuevaLista = [...get().tasks, data.task];
-          set({ tasks: nuevaLista });
-          guardarJSON(claveTasks, nuevaLista);
-          return;
-        }
-      } catch {
-        // Continúa en local
+    try {
+      const data = await apiPost<{ ok: boolean; task: Task }>('/tasks', {
+        petId,
+        title: title.trim(),
+        iconType,
+      });
+      if (data.ok && data.task) {
+        const nuevaLista = [...get().tasks, data.task];
+        set({ tasks: nuevaLista });
+        if (claveTasks) guardarJSON(claveTasks, nuevaLista);
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.isNetworkError && uid) {
+        const nuevaTarea: Task = {
+          _id: `t_${Date.now()}`,
+          title: title.trim(),
+          isCompleted: false,
+          iconType,
+          petId: { _id: petId, name: petName },
+        };
+        const nuevaLista = [...get().tasks, nuevaTarea];
+        set({ tasks: nuevaLista });
+        if (claveTasks) guardarJSON(claveTasks, nuevaLista);
       }
     }
-
-    const nuevaTarea: Task = {
-      _id: `t_${Date.now()}`,
-      title: title.trim(),
-      isCompleted: false,
-      iconType,
-      petId: { _id: petId, name: petName },
-    };
-    const nuevaLista = [...get().tasks, nuevaTarea];
-    set({ tasks: nuevaLista });
-    guardarJSON(claveTasks, nuevaLista);
   },
 
   toggleTarea: async (id, ownerId) => {
-    const claveTasks = `ph_tasks_${ownerId || 'invitado'}`;
-    const nuevaLista = get().tasks.map((t) =>
+    const uid = obtenerUserIdActivo(ownerId);
+    const claveTasks = uid ? `ph_tasks_${uid}` : null;
+    const estadoPrevio = get().tasks;
+
+    const nuevaLista = estadoPrevio.map((t) =>
       t._id === id ? { ...t, isCompleted: !t.isCompleted } : t
     );
     set({ tasks: nuevaLista });
-    guardarJSON(claveTasks, nuevaLista);
+    if (claveTasks) guardarJSON(claveTasks, nuevaLista);
 
-    if (API_BASE) {
-      try {
-        await fetch(`${API_BASE}/tasks/${id}`, { method: 'PATCH' });
-      } catch {
-        // Conserva el estado local
+    try {
+      const data = await apiPatch<{ ok: boolean; task: Task }>(`/tasks/${id}`);
+      if (data.ok && data.task) {
+        const sincronizada = get().tasks.map((t) => (t._id === id ? data.task : t));
+        set({ tasks: sincronizada });
+        if (claveTasks) guardarJSON(claveTasks, sincronizada);
+      }
+    } catch (error) {
+      if (!(error instanceof ApiError && error.isNetworkError)) {
+        set({ tasks: estadoPrevio });
+        if (claveTasks) guardarJSON(claveTasks, estadoPrevio);
       }
     }
   },
 
   eliminarTarea: async (id, ownerId) => {
-    const claveTasks = `ph_tasks_${ownerId || 'invitado'}`;
-    const nuevaLista = get().tasks.filter((t) => t._id !== id);
-    set({ tasks: nuevaLista });
-    guardarJSON(claveTasks, nuevaLista);
+    const uid = obtenerUserIdActivo(ownerId);
+    const claveTasks = uid ? `ph_tasks_${uid}` : null;
+    const estadoPrevio = get().tasks;
 
-    if (API_BASE) {
-      try {
-        await fetch(`${API_BASE}/tasks/${id}`, { method: 'DELETE' });
-      } catch {
-        // Conserva la eliminación local
+    const nuevaLista = estadoPrevio.filter((t) => t._id !== id);
+    set({ tasks: nuevaLista });
+    if (claveTasks) guardarJSON(claveTasks, nuevaLista);
+
+    try {
+      await apiDelete<{ ok: boolean }>(`/tasks/${id}`);
+    } catch (error) {
+      if (!(error instanceof ApiError && error.isNetworkError)) {
+        set({ tasks: estadoPrevio });
+        if (claveTasks) guardarJSON(claveTasks, estadoPrevio);
       }
     }
   },
 
   cargarRegistrosMedicos: async (petId) => {
-    if (!API_BASE) return;
+    const uid = obtenerUserIdActivo();
+    const claveMedical = uid ? `ph_medical_${uid}` : null;
+
     try {
-      const response = await fetch(`${API_BASE}/medical/${petId}`);
-      const data = await response.json();
-      if (data.ok && Array.isArray(data.records) && data.records.length > 0) {
+      const data = await apiGet<{ ok: boolean; records: MedicalRecordItem[] }>(
+        `/medical/${petId}`
+      );
+      // Acepta arreglos vacíos [] sin inyectar registros ficticios
+      if (data.ok && Array.isArray(data.records)) {
         const actualizado = { ...get().medicalRecords, [petId]: data.records };
         set({ medicalRecords: actualizado });
-        guardarJSON('ph_medical_records', actualizado);
+        if (claveMedical) guardarJSON(claveMedical, actualizado);
       }
     } catch {
-      // Mantiene registros locales
+      // Mantiene registros en caché local si no hay conexión
     }
   },
 
   agregarRegistroMedico: async (petId, type, date, notes) => {
-    if (API_BASE) {
-      try {
-        const response = await fetch(`${API_BASE}/medical`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ petId, type, date, notes }),
-        });
-        const data = await response.json();
-        if (data.ok && data.record) {
-          const previos = get().medicalRecords[petId] || [];
-          const actualizado = { ...get().medicalRecords, [petId]: [data.record, ...previos] };
-          set({ medicalRecords: actualizado });
-          guardarJSON('ph_medical_records', actualizado);
-          return;
-        }
-      } catch {
-        // Continúa en local
+    const uid = obtenerUserIdActivo();
+    const claveMedical = uid ? `ph_medical_${uid}` : null;
+
+    try {
+      const data = await apiPost<{ ok: boolean; record: MedicalRecordItem }>('/medical', {
+        petId,
+        type,
+        date,
+        notes: notes ?? '',
+      });
+      if (data.ok && data.record) {
+        const previos = get().medicalRecords[petId] || [];
+        const actualizado = { ...get().medicalRecords, [petId]: [data.record, ...previos] };
+        set({ medicalRecords: actualizado });
+        if (claveMedical) guardarJSON(claveMedical, actualizado);
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.isNetworkError && uid) {
+        const nuevo: MedicalRecordItem = {
+          _id: `med_${Date.now()}`,
+          type,
+          date,
+          notes,
+          petId,
+        };
+        const previos = get().medicalRecords[petId] || [];
+        const actualizado = { ...get().medicalRecords, [petId]: [nuevo, ...previos] };
+        set({ medicalRecords: actualizado });
+        if (claveMedical) guardarJSON(claveMedical, actualizado);
       }
     }
-
-    const nuevo: MedicalRecordItem = {
-      _id: `med_${Date.now()}`,
-      type,
-      date,
-      notes,
-      petId,
-    };
-    const previos = get().medicalRecords[petId] || [];
-    const actualizado = { ...get().medicalRecords, [petId]: [nuevo, ...previos] };
-    set({ medicalRecords: actualizado });
-    guardarJSON('ph_medical_records', actualizado);
   },
 
   eliminarRegistroMedico: async (petId, recordId) => {
-    if (API_BASE) {
-      try {
-        await fetch(`${API_BASE}/medical/${recordId}`, { method: 'DELETE' });
-      } catch {
-        // Continúa en local
+    const uid = obtenerUserIdActivo();
+    const claveMedical = uid ? `ph_medical_${uid}` : null;
+
+    try {
+      await apiDelete<{ ok: boolean }>(`/medical/${recordId}`);
+    } catch (error) {
+      if (!(error instanceof ApiError && error.isNetworkError)) {
+        return;
       }
     }
 
@@ -806,140 +834,69 @@ export const usePetStore = create<PetState>((set, get) => ({
       [petId]: previos.filter((r) => r._id !== recordId),
     };
     set({ medicalRecords: actualizado });
-    guardarJSON('ph_medical_records', actualizado);
+    if (claveMedical) guardarJSON(claveMedical, actualizado);
   },
 
   agregarRazaCatalogo: async (nueva) => {
-    if (API_BASE) {
-      try {
-        const response = await fetch(`${API_BASE}/catalog/razas`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(nueva),
-        });
-        const data = await response.json();
-        if (data.ok && data.item) {
-          const nuevaLista = [...get().catalogRazas, data.item];
-          set({ catalogRazas: nuevaLista });
-          guardarJSON('ph_catalog_razas', nuevaLista);
-          return;
-        }
-      } catch {
-        // Continúa en local
-      }
+    const data = await apiPost<{ ok: boolean; item: BreedItem }>('/catalog/razas', nueva);
+    if (data.ok && data.item) {
+      const nuevaLista = [...get().catalogRazas, data.item];
+      set({ catalogRazas: nuevaLista });
+      guardarJSON('ph_catalog_razas', nuevaLista);
     }
-
-    const itemLocal: BreedItem = { ...nueva, _id: `raza_${Date.now()}` };
-    const nuevaLista = [...get().catalogRazas, itemLocal];
-    set({ catalogRazas: nuevaLista });
-    guardarJSON('ph_catalog_razas', nuevaLista);
   },
 
   actualizarRazaCatalogo: async (id, datos) => {
-    if (API_BASE) {
-      try {
-        const response = await fetch(`${API_BASE}/catalog/razas/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(datos),
-        });
-        const data = await response.json();
-        if (data.ok && data.item) {
-          const nuevaLista = get().catalogRazas.map((r) => (r._id === id ? data.item : r));
-          set({ catalogRazas: nuevaLista });
-          guardarJSON('ph_catalog_razas', nuevaLista);
-          return;
-        }
-      } catch {
-        // Continúa en local
-      }
-    }
-
-    const nuevaLista = get().catalogRazas.map((r) =>
-      r._id === id ? { ...r, ...datos, _id: id } : r
+    const data = await apiPut<{ ok: boolean; item: BreedItem }>(
+      `/catalog/razas/${id}`,
+      datos
     );
-    set({ catalogRazas: nuevaLista });
-    guardarJSON('ph_catalog_razas', nuevaLista);
+    if (data.ok && data.item) {
+      const nuevaLista = get().catalogRazas.map((r) => (r._id === id ? data.item : r));
+      set({ catalogRazas: nuevaLista });
+      guardarJSON('ph_catalog_razas', nuevaLista);
+    }
   },
 
   eliminarRazaCatalogo: async (id) => {
-    if (API_BASE) {
-      try {
-        await fetch(`${API_BASE}/catalog/razas/${id}`, { method: 'DELETE' });
-      } catch {
-        // Continúa en local
-      }
+    const data = await apiDelete<{ ok: boolean }>(`/catalog/razas/${id}`);
+    if (data.ok) {
+      const nuevaLista = get().catalogRazas.filter((r) => r._id !== id);
+      set({ catalogRazas: nuevaLista });
+      guardarJSON('ph_catalog_razas', nuevaLista);
     }
-
-    const nuevaLista = get().catalogRazas.filter((r) => r._id !== id);
-    set({ catalogRazas: nuevaLista });
-    guardarJSON('ph_catalog_razas', nuevaLista);
   },
 
   agregarTipCatalogo: async (nuevo) => {
-    if (API_BASE) {
-      try {
-        const response = await fetch(`${API_BASE}/catalog/recomendaciones`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(nuevo),
-        });
-        const data = await response.json();
-        if (data.ok && data.tip) {
-          const nuevaLista = [...get().catalogTips, data.tip];
-          set({ catalogTips: nuevaLista });
-          guardarJSON('ph_catalog_tips', nuevaLista);
-          return;
-        }
-      } catch {
-        // Continúa en local
-      }
+    const data = await apiPost<{ ok: boolean; tip: TipItem }>(
+      '/catalog/recomendaciones',
+      nuevo
+    );
+    if (data.ok && data.tip) {
+      const nuevaLista = [...get().catalogTips, data.tip];
+      set({ catalogTips: nuevaLista });
+      guardarJSON('ph_catalog_tips', nuevaLista);
     }
-
-    const tipLocal: TipItem = { ...nuevo, _id: `tip_${Date.now()}` };
-    const nuevaLista = [...get().catalogTips, tipLocal];
-    set({ catalogTips: nuevaLista });
-    guardarJSON('ph_catalog_tips', nuevaLista);
   },
 
   actualizarTipCatalogo: async (id, datos) => {
-    if (API_BASE) {
-      try {
-        const response = await fetch(`${API_BASE}/catalog/recomendaciones/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(datos),
-        });
-        const data = await response.json();
-        if (data.ok && data.tip) {
-          const nuevaLista = get().catalogTips.map((t) => (t._id === id ? data.tip : t));
-          set({ catalogTips: nuevaLista });
-          guardarJSON('ph_catalog_tips', nuevaLista);
-          return;
-        }
-      } catch {
-        // Continúa en local
-      }
-    }
-
-    const nuevaLista = get().catalogTips.map((t) =>
-      t._id === id ? { ...t, ...datos, _id: id } : t
+    const data = await apiPut<{ ok: boolean; tip: TipItem }>(
+      `/catalog/recomendaciones/${id}`,
+      datos
     );
-    set({ catalogTips: nuevaLista });
-    guardarJSON('ph_catalog_tips', nuevaLista);
+    if (data.ok && data.tip) {
+      const nuevaLista = get().catalogTips.map((t) => (t._id === id ? data.tip : t));
+      set({ catalogTips: nuevaLista });
+      guardarJSON('ph_catalog_tips', nuevaLista);
+    }
   },
 
   eliminarTipCatalogo: async (id) => {
-    if (API_BASE) {
-      try {
-        await fetch(`${API_BASE}/catalog/recomendaciones/${id}`, { method: 'DELETE' });
-      } catch {
-        // Continúa en local
-      }
+    const data = await apiDelete<{ ok: boolean }>(`/catalog/recomendaciones/${id}`);
+    if (data.ok) {
+      const nuevaLista = get().catalogTips.filter((t) => t._id !== id);
+      set({ catalogTips: nuevaLista });
+      guardarJSON('ph_catalog_tips', nuevaLista);
     }
-
-    const nuevaLista = get().catalogTips.filter((t) => t._id !== id);
-    set({ catalogTips: nuevaLista });
-    guardarJSON('ph_catalog_tips', nuevaLista);
   },
 }));

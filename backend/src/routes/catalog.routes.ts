@@ -1,5 +1,13 @@
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import { Breed, Tip } from '../models/Catalog.js';
+import { requireAuth, requireAdmin } from '../middlewares/auth.middleware.js';
+import {
+  createBreedSchema,
+  updateBreedSchema,
+  createTipSchema,
+  updateTipSchema,
+  objectIdSchema,
+} from '../schemas/validation.schemas.js';
 
 const router = express.Router();
 
@@ -292,8 +300,8 @@ const normalizarTip = (doc: any) => ({
   iconType: doc.iconType || 'footprints',
 });
 
-// GET /api/catalog/razas - Obtiene todas las razas y animales desde MongoDB (inicializa si está vacío)
-router.get('/razas', async (_req, res) => {
+// GET /api/catalog/razas - Público: obtiene todas las razas y animales desde MongoDB (inicializa si está vacío)
+router.get('/razas', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     let items = await Breed.find().sort({ createdAt: 1 });
     if (items.length === 0) {
@@ -302,144 +310,178 @@ router.get('/razas', async (_req, res) => {
     }
     res.json({ ok: true, items: items.map(normalizarRaza) });
   } catch (error) {
-    console.error('Error al obtener catálogo de razas:', error);
-    res.status(500).json({ ok: false, error: 'Error al cargar el catálogo de razas.' });
+    next(error);
   }
 });
 
-// POST /api/catalog/razas - Permite al Administrador agregar una nueva raza o animal a MongoDB
-router.post('/razas', async (req, res) => {
-  try {
-    const { name, category, desc, img, bg, suggestedTasks } = req.body;
-    if (!name || !category || !desc) {
-      res.status(400).json({ ok: false, error: 'Nombre, categoría y descripción son obligatorios.' });
-      return;
+// POST /api/catalog/razas - Solo Administrador: agrega una nueva raza o animal validado con Zod
+router.post(
+  '/razas',
+  requireAuth,
+  requireAdmin,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { name, category, desc, img, bg, suggestedTasks } = createBreedSchema.parse(req.body);
+
+      const nuevaRaza = await Breed.create({
+        name,
+        category,
+        desc,
+        img,
+        bg: bg || 'bg-green-50',
+        suggestedTasks:
+          Array.isArray(suggestedTasks) && suggestedTasks.length > 0
+            ? suggestedTasks
+            : ['Dar alimento adecuado', 'Renovar agua fresca', 'Revisión y cuidado diario'],
+      });
+
+      res.status(201).json({ ok: true, item: normalizarRaza(nuevaRaza) });
+    } catch (error) {
+      next(error);
     }
-
-    const nuevaRaza = await Breed.create({
-      name: name.trim(),
-      category,
-      desc: desc.trim(),
-      img: img ?? '',
-      bg: bg || 'bg-green-50',
-      suggestedTasks: Array.isArray(suggestedTasks) && suggestedTasks.length > 0
-        ? suggestedTasks
-        : ['Dar alimento adecuado', 'Renovar agua fresca', 'Revisión y cuidado diario'],
-    });
-
-    res.status(201).json({ ok: true, item: normalizarRaza(nuevaRaza) });
-  } catch (error) {
-    console.error('Error al crear raza:', error);
-    res.status(500).json({ ok: false, error: 'Error al guardar la raza en la base de datos.' });
   }
-});
+);
 
-// PUT /api/catalog/razas/:id - Permite al Administrador editar una raza existente en MongoDB
-router.put('/razas/:id', async (req, res) => {
-  try {
-    const { name, category, desc, img, bg, suggestedTasks } = req.body;
-    const raza = await Breed.findById(req.params.id);
-    if (!raza) {
-      res.status(404).json({ ok: false, error: 'Raza no encontrada.' });
-      return;
+// PUT /api/catalog/razas/:id - Solo Administrador: edita una raza existente en MongoDB
+router.put(
+  '/razas/:id',
+  requireAuth,
+  requireAdmin,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const breedId = objectIdSchema.parse(req.params.id);
+      const datos = updateBreedSchema.parse(req.body);
+
+      const raza = await Breed.findById(breedId);
+      if (!raza) {
+        res.status(404).json({ ok: false, error: 'Raza no encontrada.' });
+        return;
+      }
+
+      if (datos.name !== undefined) raza.name = datos.name;
+      if (datos.category !== undefined) raza.category = datos.category;
+      if (datos.desc !== undefined) raza.desc = datos.desc;
+      if (datos.img !== undefined) raza.img = datos.img;
+      if (datos.bg !== undefined) raza.bg = datos.bg;
+      if (datos.suggestedTasks !== undefined) raza.suggestedTasks = datos.suggestedTasks;
+
+      await raza.save();
+      res.json({ ok: true, item: normalizarRaza(raza) });
+    } catch (error) {
+      next(error);
     }
-
-    if (name !== undefined) raza.name = String(name).trim();
-    if (category !== undefined) raza.category = category;
-    if (desc !== undefined) raza.desc = String(desc).trim();
-    if (img !== undefined) raza.img = img;
-    if (bg !== undefined) raza.bg = bg;
-    if (Array.isArray(suggestedTasks)) raza.suggestedTasks = suggestedTasks;
-
-    await raza.save();
-    res.json({ ok: true, item: normalizarRaza(raza) });
-  } catch (error) {
-    console.error('Error al actualizar raza:', error);
-    res.status(500).json({ ok: false, error: 'Error al actualizar la raza.' });
   }
-});
+);
 
-// DELETE /api/catalog/razas/:id - Permite al Administrador eliminar una raza del catálogo
-router.delete('/razas/:id', async (req, res) => {
-  try {
-    await Breed.findByIdAndDelete(req.params.id);
-    res.json({ ok: true, message: 'Elemento eliminado del catálogo.' });
-  } catch {
-    res.status(500).json({ ok: false, error: 'Error al eliminar del catálogo.' });
-  }
-});
-
-// GET /api/catalog/recomendaciones - Obtiene los tips desde MongoDB (inicializa si está vacío)
-router.get('/recomendaciones', async (_req, res) => {
-  try {
-    let tips = await Tip.find().sort({ createdAt: 1 });
-    if (tips.length === 0) {
-      await Tip.insertMany(tipsSemilla);
-      tips = await Tip.find().sort({ createdAt: 1 });
+// DELETE /api/catalog/razas/:id - Solo Administrador: elimina una raza del catálogo
+router.delete(
+  '/razas/:id',
+  requireAuth,
+  requireAdmin,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const breedId = objectIdSchema.parse(req.params.id);
+      const eliminada = await Breed.findByIdAndDelete(breedId);
+      if (!eliminada) {
+        res.status(404).json({ ok: false, error: 'Raza no encontrada.' });
+        return;
+      }
+      res.json({ ok: true, message: 'Elemento eliminado del catálogo.' });
+    } catch (error) {
+      next(error);
     }
-    res.json({ ok: true, recomendaciones: tips.map(normalizarTip) });
-  } catch (error) {
-    console.error('Error al obtener recomendaciones:', error);
-    res.status(500).json({ ok: false, error: 'Error al cargar las recomendaciones.' });
   }
-});
+);
 
-// POST /api/catalog/recomendaciones - Permite al Administrador agregar nuevos tips a MongoDB
-router.post('/recomendaciones', async (req, res) => {
-  try {
-    const { title, desc, detail, species, iconType } = req.body;
-    if (!title || !desc) {
-      res.status(400).json({ ok: false, error: 'El título y la descripción son obligatorios.' });
-      return;
+// GET /api/catalog/recomendaciones - Público: obtiene los tips desde MongoDB (inicializa si está vacío)
+router.get(
+  '/recomendaciones',
+  async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      let tips = await Tip.find().sort({ createdAt: 1 });
+      if (tips.length === 0) {
+        await Tip.insertMany(tipsSemilla);
+        tips = await Tip.find().sort({ createdAt: 1 });
+      }
+      res.json({ ok: true, recomendaciones: tips.map(normalizarTip) });
+    } catch (error) {
+      next(error);
     }
-
-    const nuevoTip = await Tip.create({
-      title: title.trim(),
-      desc: desc.trim(),
-      detail: detail?.trim() || desc.trim(),
-      species: species || 'Todos',
-      iconType: iconType || 'footprints',
-    });
-
-    res.status(201).json({ ok: true, tip: normalizarTip(nuevoTip) });
-  } catch (error) {
-    console.error('Error al guardar recomendación:', error);
-    res.status(500).json({ ok: false, error: 'Error al guardar la recomendación.' });
   }
-});
+);
 
-// PUT /api/catalog/recomendaciones/:id - Permite al Administrador editar un tip existente en MongoDB
-router.put('/recomendaciones/:id', async (req, res) => {
-  try {
-    const { title, desc, detail, species, iconType } = req.body;
-    const tip = await Tip.findById(req.params.id);
-    if (!tip) {
-      res.status(404).json({ ok: false, error: 'Recomendación no encontrada.' });
-      return;
+// POST /api/catalog/recomendaciones - Solo Administrador: agrega nuevos tips validados con Zod
+router.post(
+  '/recomendaciones',
+  requireAuth,
+  requireAdmin,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { title, desc, detail, species, iconType } = createTipSchema.parse(req.body);
+
+      const nuevoTip = await Tip.create({
+        title,
+        desc,
+        detail: detail && detail.length > 0 ? detail : desc,
+        species,
+        iconType,
+      });
+
+      res.status(201).json({ ok: true, tip: normalizarTip(nuevoTip) });
+    } catch (error) {
+      next(error);
     }
-
-    if (title !== undefined) tip.title = String(title).trim();
-    if (desc !== undefined) tip.desc = String(desc).trim();
-    if (detail !== undefined) tip.detail = String(detail).trim();
-    if (species !== undefined) tip.species = species;
-    if (iconType !== undefined) tip.iconType = iconType;
-
-    await tip.save();
-    res.json({ ok: true, tip: normalizarTip(tip) });
-  } catch (error) {
-    console.error('Error al actualizar recomendación:', error);
-    res.status(500).json({ ok: false, error: 'Error al actualizar la recomendación.' });
   }
-});
+);
 
-// DELETE /api/catalog/recomendaciones/:id - Permite al Administrador eliminar un tip
-router.delete('/recomendaciones/:id', async (req, res) => {
-  try {
-    await Tip.findByIdAndDelete(req.params.id);
-    res.json({ ok: true, message: 'Recomendación eliminada.' });
-  } catch {
-    res.status(500).json({ ok: false, error: 'Error al eliminar recomendación.' });
+// PUT /api/catalog/recomendaciones/:id - Solo Administrador: edita un tip existente en MongoDB
+router.put(
+  '/recomendaciones/:id',
+  requireAuth,
+  requireAdmin,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const tipId = objectIdSchema.parse(req.params.id);
+      const datos = updateTipSchema.parse(req.body);
+
+      const tip = await Tip.findById(tipId);
+      if (!tip) {
+        res.status(404).json({ ok: false, error: 'Recomendación no encontrada.' });
+        return;
+      }
+
+      if (datos.title !== undefined) tip.title = datos.title;
+      if (datos.desc !== undefined) tip.desc = datos.desc;
+      if (datos.detail !== undefined) tip.detail = datos.detail;
+      if (datos.species !== undefined) tip.species = datos.species;
+      if (datos.iconType !== undefined) tip.iconType = datos.iconType;
+
+      await tip.save();
+      res.json({ ok: true, tip: normalizarTip(tip) });
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
+
+// DELETE /api/catalog/recomendaciones/:id - Solo Administrador: elimina un tip
+router.delete(
+  '/recomendaciones/:id',
+  requireAuth,
+  requireAdmin,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const tipId = objectIdSchema.parse(req.params.id);
+      const eliminado = await Tip.findByIdAndDelete(tipId);
+      if (!eliminado) {
+        res.status(404).json({ ok: false, error: 'Recomendación no encontrada.' });
+        return;
+      }
+      res.json({ ok: true, message: 'Recomendación eliminada.' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router;
