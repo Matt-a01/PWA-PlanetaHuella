@@ -43,8 +43,22 @@ if (!parsedEnv.success) {
   process.exit(1);
 }
 
+const normalizarOrigenCors = (origenRaw: string): string => {
+  const limpio = origenRaw
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .trim()
+    .replace(/\/+$/, '');
+
+  if (!limpio) return '';
+  if (limpio.startsWith('http://') || limpio.startsWith('https://')) {
+    return limpio;
+  }
+  return `https://${limpio}`;
+};
+
 const corsOrigins = parsedEnv.data.CORS_ORIGIN.split(',')
-  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .map(normalizarOrigenCors)
   .filter((origin) => origin.length > 0);
 
 export const env = {

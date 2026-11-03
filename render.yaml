@@ -1,13 +1,41 @@
-# render.yaml
+# Blueprint Full-Stack de Planeta Huella para Render (Backend API + Frontend PWA)
 services:
+  # 1. Servicio Web Backend (Node.js + Express 5 + MongoDB Atlas)
+  - type: web
+    name: planeta-huella-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+
+  # 2. Sitio Estático Frontend PWA (React 19 + Vite 8)
   - type: web
     name: planeta-huella-frontend
-    env: static
-    buildCommand: cd frontend && npm install && npm run build
+    runtime: static
+    buildCommand: cd frontend && npm install --include=dev && npm run build
     staticPublishPath: ./frontend/dist
-    # Esta regla de reescritura es vital para que React Router funcione correctamente 
-    # si actualizas la página desde el navegador.
+    headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache, no-store, must-revalidate
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false

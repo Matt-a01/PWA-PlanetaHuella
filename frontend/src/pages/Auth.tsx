@@ -93,6 +93,10 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
         );
         setAuth(response.user, response.token);
         setTimeout(() => navigate('/inicio', { replace: true }), 400);
+      } else {
+        setErrorMessage(
+          response.error || 'No se pudo completar la autenticación con el servidor.'
+        );
       }
     } catch (err: unknown) {
       const mensaje =

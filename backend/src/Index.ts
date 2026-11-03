@@ -15,6 +15,9 @@ import catalogRoutes from './routes/catalog.routes.js';
 
 const app = express();
 
+// Necesario detrás del balanceador / reverse proxy de Render para X-Forwarded-For y express-rate-limit
+app.set('trust proxy', 1);
+
 // Cabeceras HTTP de seguridad (OWASP) y compresión de respuestas
 app.use(helmet());
 app.use(compression());
@@ -23,11 +26,14 @@ app.use(compression());
 app.use(
   cors({
     origin: (origin, callback) => {
-      const normalizedOrigin = origin?.trim().replace(/\/$/, '');
+      const normalizedOrigin = origin?.trim().replace(/\/+$/, '');
       if (!normalizedOrigin || env.corsOrigins.includes(normalizedOrigin)) {
         callback(null, true);
         return;
       }
+      console.warn(
+        `⚠️ Petición bloqueada por CORS desde el origen "${normalizedOrigin}". Orígenes permitidos: ${env.corsOrigins.join(', ')}`
+      );
       callback(new Error('Origen no permitido por la política CORS.'));
     },
     credentials: true,
@@ -39,8 +45,6 @@ app.use(express.json({ limit: '2mb' }));
 
 // Limitador general de peticiones sobre la API
 app.use('/api', apiLimiter);
-
-conectarDB();
 
 // Endpoint de salud para monitoreo de estado del servidor y conexión a MongoDB
 app.get('/api/health', (_req, res) => {
@@ -79,6 +83,11 @@ app.get('/', (_req, res) => {
 // Manejador centralizado de errores (debe registrarse después de todas las rutas)
 app.use(errorMiddleware);
 
-app.listen(env.PORT, () => {
-  console.log(`Servidor corriendo en el puerto ${env.PORT}`);
-});
+const iniciarServidor = async (): Promise<void> => {
+  await conectarDB();
+  app.listen(env.PORT, () => {
+    console.log(`Servidor corriendo en el puerto ${env.PORT}`);
+  });
+};
+
+void iniciarServidor();
