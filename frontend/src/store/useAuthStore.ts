@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import { fetchUserFromDB } from '../services/authService';
+import { registerUnauthorizedHandler } from '../services/apiClient';
+import { fetchCurrentUser } from '../services/authService';
+import { usePetStore } from './usePetStore';
 
 export interface User {
   id: string;
@@ -10,14 +12,21 @@ export interface User {
   createdAt?: string;
 }
 
-// Detecta si la cuenta tiene permisos de Administrador (en 'role' o en el arreglo 'roles' de MongoDB)
+const normalizarValorRol = (valor: unknown): string =>
+  String(valor ?? '')
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .trim()
+    .toLowerCase();
+
+// Detecta con comparación estricta si la cuenta posee el rol 'admin' en 'role' o en 'roles'
 export const esUsuarioAdmin = (user?: User | null): boolean => {
   if (!user) return false;
-  const rolTexto = String(user.role || '').toLowerCase();
-  const enArreglo =
+  const esAdminDirecto = normalizarValorRol(user.role) === 'admin';
+  const esAdminEnArreglo =
     Array.isArray(user.roles) &&
-    user.roles.some((r) => String(r).toLowerCase().includes('admin'));
-  return rolTexto.includes('admin') || enArreglo;
+    user.roles.some((r) => normalizarValorRol(r) === 'admin');
+  return esAdminDirecto || esAdminEnArreglo;
 };
 
 const normalizarUsuario = (user: User | null): User | null => {
@@ -39,40 +48,84 @@ interface AuthState {
   logout: () => void;
 }
 
-const savedUser = localStorage.getItem('ph_user');
-const savedToken = localStorage.getItem('ph_token');
+const leerSesionInicial = (): { user: User | null; token: string | null } => {
+  try {
+    if (typeof localStorage === 'undefined') {
+      return { user: null, token: null };
+    }
+    // Limpia cualquier residuo histórico inseguro de versiones previas
+    localStorage.removeItem('ph_registered_users');
+
+    const savedUserRaw = localStorage.getItem('ph_user');
+    const savedToken = localStorage.getItem('ph_token');
+
+    if (!savedUserRaw || !savedToken) {
+      return { user: null, token: null };
+    }
+
+    const parsedUser = JSON.parse(savedUserRaw) as User;
+    return {
+      user: normalizarUsuario(parsedUser),
+      token: savedToken,
+    };
+  } catch {
+    return { user: null, token: null };
+  }
+};
+
+const sesionInicial = leerSesionInicial();
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: savedUser ? normalizarUsuario(JSON.parse(savedUser)) : null,
-  token: savedToken || null,
-  isAuthenticated: !!savedToken,
+  user: sesionInicial.user,
+  token: sesionInicial.token,
+  isAuthenticated: Boolean(sesionInicial.token && sesionInicial.user),
 
   login: (user: User, token: string) => {
     const userConRol = normalizarUsuario(user)!;
-    localStorage.setItem('ph_user', JSON.stringify(userConRol));
-    localStorage.setItem('ph_token', token);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('ph_user', JSON.stringify(userConRol));
+      localStorage.setItem('ph_token', token);
+    }
     set({ user: userConRol, token, isAuthenticated: true });
   },
 
-  // Consulta en MongoDB si al usuario se le asignó el rol 'admin' desde la base de datos
+  // Sincroniza usuario y JWT actualizado mediante GET /api/auth/me (ej. tras promoción a admin en Atlas)
   sincronizarRolDesdeBD: async () => {
-    const actual = get().user;
-    if (!actual) return;
+    const { user: actual, token: tokenActual } = get();
+    if (!actual || !tokenActual) return;
 
-    const actualizadoBD = await fetchUserFromDB(actual.id, actual.email);
-    if (actualizadoBD) {
+    const respuesta = await fetchCurrentUser();
+    if (respuesta?.ok && respuesta.user) {
       const nuevoUsuario = normalizarUsuario({
         ...actual,
-        ...actualizadoBD,
+        ...respuesta.user,
       })!;
-      localStorage.setItem('ph_user', JSON.stringify(nuevoUsuario));
-      set({ user: nuevoUsuario });
+      const nuevoToken = respuesta.token || tokenActual;
+
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ph_user', JSON.stringify(nuevoUsuario));
+        localStorage.setItem('ph_token', nuevoToken);
+      }
+
+      set({
+        user: nuevoUsuario,
+        token: nuevoToken,
+        isAuthenticated: true,
+      });
     }
   },
 
   logout: () => {
-    localStorage.removeItem('ph_user');
-    localStorage.removeItem('ph_token');
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('ph_user');
+      localStorage.removeItem('ph_token');
+    }
+    usePetStore.getState().resetStore();
     set({ user: null, token: null, isAuthenticated: false });
   },
 }));
+
+// Conecta el interceptor global 401 de apiClient con el cierre limpio de sesión
+registerUnauthorizedHandler(() => {
+  useAuthStore.getState().logout();
+});

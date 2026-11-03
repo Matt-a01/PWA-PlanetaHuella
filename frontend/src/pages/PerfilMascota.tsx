@@ -8,6 +8,7 @@ import {
   Trash2,
   Plus,
   Sparkles,
+  PawPrint,
 } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import PetAvatar from '../components/PetAvatar';
@@ -24,6 +25,7 @@ export default function PerfilMascota() {
     pets,
     tasks,
     medicalRecords,
+    cargarDatos,
     toggleTarea,
     eliminarTarea,
     cargarRegistrosMedicos,
@@ -35,32 +37,47 @@ export default function PerfilMascota() {
   const [modalNuevaTarea, setModalNuevaTarea] = useState(false);
   const [modalNuevoRegistro, setModalNuevoRegistro] = useState(false);
 
-  const mascota = pets.find((p) => p._id === id) || pets[0] || {
-    _id: 'luna',
-    name: 'Luna',
-    species: 'Perro',
-    breed: 'Golden Retriever',
-    age: 3,
-    gender: 'Hembra',
-    characteristics: '',
-    imageUrl: '',
-  };
+  useEffect(() => {
+    if (pets.length === 0 && user?.id) {
+      cargarDatos(user.id);
+    }
+  }, [pets.length, user?.id, cargarDatos]);
+
+  const mascota = pets.find((p) => p._id === id) || null;
 
   useEffect(() => {
-    if (mascota._id) {
+    if (mascota?._id) {
       cargarRegistrosMedicos(mascota._id);
     }
-  }, [mascota._id, cargarRegistrosMedicos]);
+  }, [mascota?._id, cargarRegistrosMedicos]);
+
+  if (!mascota) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] p-5 pb-24 flex flex-col items-center justify-center">
+        <div className="w-full max-w-md bg-white rounded-3xl p-8 text-center border border-gray-100 shadow-xs">
+          <PawPrint size={34} className="mx-auto text-green-600 mb-2.5" />
+          <h2 className="text-base font-bold text-gray-900">Mascota no encontrada</h2>
+          <p className="text-xs text-gray-500 mt-1 mb-5">
+            Es posible que esta ficha haya sido eliminada o aún esté sincronizándose.
+          </p>
+          <Link
+            to="/mascotas"
+            className="inline-flex items-center gap-1.5 bg-green-700 hover:bg-green-800 text-white text-xs font-semibold px-4 py-2.5 rounded-full transition-colors"
+          >
+            <ChevronLeft size={15} />
+            <span>Volver a Mis mascotas</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const tareasMascota = tasks.filter((t) => {
     const pid = typeof t.petId === 'object' ? t.petId._id : t.petId;
     return pid === mascota._id;
   });
 
-  const registrosMascota = medicalRecords[mascota._id] || [
-    { _id: 'm1', type: 'Última vacuna', date: '2026-02-12', notes: 'Séxtuple anual', petId: mascota._id },
-    { _id: 'm2', type: 'Última desparasitación', date: '2026-01-10', notes: 'Interna y externa', petId: mascota._id },
-  ];
+  const registrosMascota = medicalRecords[mascota._id] ?? [];
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">
@@ -195,7 +212,11 @@ export default function PerfilMascota() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Estado general</p>
-                  <p className="font-semibold text-sm text-green-700">¡Al día en sus cuidados!</p>
+                  <p className="font-semibold text-sm text-green-700">
+                    {registrosMascota.length > 0
+                      ? '¡Al día en sus cuidados!'
+                      : 'Historial médico listo para iniciar'}
+                  </p>
                 </div>
               </div>
               <button
@@ -208,44 +229,64 @@ export default function PerfilMascota() {
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden">
-              {registrosMascota.map((rec) => {
-                const esCita = rec.type.toLowerCase().includes('cita');
-                return (
-                  <div
-                    key={rec._id}
-                    className={`p-4 border-b border-gray-50 flex justify-between items-center ${
-                      esCita ? 'bg-green-50/70' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-9 h-9 rounded-full flex items-center justify-center ${
-                          esCita ? 'bg-green-100 text-green-700' : 'bg-green-50 text-green-600'
-                        }`}
-                      >
-                        {esCita ? <Calendar size={18} /> : <CheckCircle2 size={18} />}
-                      </div>
-                      <div>
-                        <p className={`font-semibold text-sm ${esCita ? 'text-green-800' : 'text-gray-900'}`}>
-                          {rec.type}
-                        </p>
-                        <p className={`text-xs ${esCita ? 'text-green-600' : 'text-gray-500'}`}>
-                          {rec.date.slice(0, 10)} {rec.notes ? `• ${rec.notes}` : ''}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => eliminarRegistroMedico(mascota._id, rec._id)}
-                      className="text-gray-400 hover:text-red-500 p-1 cursor-pointer"
+            {registrosMascota.length === 0 ? (
+              <div className="bg-white rounded-2xl shadow-xs border border-dashed border-gray-200 p-6 text-center">
+                <Calendar size={22} className="mx-auto text-green-600 mb-2" />
+                <p className="text-sm font-semibold text-gray-800">
+                  Sin controles médicos registrados
+                </p>
+                <p className="text-xs text-gray-500 mt-1 mb-3">
+                  Registra la primera vacuna, desparasitación o cita veterinaria de {mascota.name}.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setModalNuevoRegistro(true)}
+                  className="inline-flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-800 border border-green-200 px-3.5 py-2 rounded-full text-xs font-semibold cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>Registrar primera vacuna o cita</span>
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden">
+                {registrosMascota.map((rec) => {
+                  const esCita = rec.type.toLowerCase().includes('cita');
+                  return (
+                    <div
+                      key={rec._id}
+                      className={`p-4 border-b border-gray-50 flex justify-between items-center ${
+                        esCita ? 'bg-green-50/70' : ''
+                      }`}
                     >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-9 h-9 rounded-full flex items-center justify-center ${
+                            esCita ? 'bg-green-100 text-green-700' : 'bg-green-50 text-green-600'
+                          }`}
+                        >
+                          {esCita ? <Calendar size={18} /> : <CheckCircle2 size={18} />}
+                        </div>
+                        <div>
+                          <p className={`font-semibold text-sm ${esCita ? 'text-green-800' : 'text-gray-900'}`}>
+                            {rec.type}
+                          </p>
+                          <p className={`text-xs ${esCita ? 'text-green-600' : 'text-gray-500'}`}>
+                            {rec.date.slice(0, 10)} {rec.notes ? `• ${rec.notes}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => eliminarRegistroMedico(mascota._id, rec._id)}
+                        className="text-gray-400 hover:text-red-500 p-1 cursor-pointer"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
 

@@ -58,10 +58,7 @@ export default function PetDetailModal({
     return pid === mascota._id;
   });
 
-  const registrosMascota = medicalRecords[mascota._id] || [
-    { _id: 'm1', type: 'Última vacuna', date: '2026-02-12', notes: 'Control anual al día', petId: mascota._id },
-    { _id: 'm2', type: 'Última desparasitación', date: '2026-01-10', notes: 'Interna y externa', petId: mascota._id },
-  ];
+  const registrosMascota = medicalRecords[mascota._id] ?? [];
 
   return (
     <>
@@ -212,45 +209,61 @@ export default function PetDetailModal({
                 </button>
               </div>
 
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                {registrosMascota.map((rec) => {
-                  const esCita = rec.type.toLowerCase().includes('cita');
-                  return (
-                    <div
-                      key={rec._id}
-                      className={`p-3 rounded-xl border flex justify-between items-center ${
-                        esCita
-                          ? 'bg-green-50/70 border-green-100'
-                          : 'bg-gray-50 border-gray-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                            esCita ? 'bg-green-100 text-green-700' : 'bg-white text-green-600'
-                          }`}
-                        >
-                          {esCita ? <Calendar size={16} /> : <CheckCircle2 size={16} />}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-xs text-gray-900">{rec.type}</p>
-                          <p className="text-[11px] text-gray-500">
-                            {rec.date.slice(0, 10)} {rec.notes ? `• ${rec.notes}` : ''}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => eliminarRegistroMedico(mascota._id, rec._id)}
-                        className="text-gray-400 hover:text-red-500 p-1 cursor-pointer"
-                        title="Eliminar registro"
+              {registrosMascota.length === 0 ? (
+                <div className="text-center py-6 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                  <Calendar size={20} className="mx-auto text-green-600 mb-1.5" />
+                  <p className="text-xs text-gray-500 mb-2">
+                    Aún no hay vacunas ni citas registradas para {mascota.name}.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setModalNuevoRegistro(true)}
+                    className="text-xs font-semibold text-green-700 hover:underline cursor-pointer"
+                  >
+                    + Registrar primera vacuna o cita
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {registrosMascota.map((rec) => {
+                    const esCita = rec.type.toLowerCase().includes('cita');
+                    return (
+                      <div
+                        key={rec._id}
+                        className={`p-3 rounded-xl border flex justify-between items-center ${
+                          esCita
+                            ? 'bg-green-50/70 border-green-100'
+                            : 'bg-gray-50 border-gray-100'
+                        }`}
                       >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                              esCita ? 'bg-green-100 text-green-700' : 'bg-white text-green-600'
+                            }`}
+                          >
+                            {esCita ? <Calendar size={16} /> : <CheckCircle2 size={16} />}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-xs text-gray-900">{rec.type}</p>
+                            <p className="text-[11px] text-gray-500">
+                              {rec.date.slice(0, 10)} {rec.notes ? `• ${rec.notes}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => eliminarRegistroMedico(mascota._id, rec._id)}
+                          className="text-gray-400 hover:text-red-500 p-1 cursor-pointer"
+                          title="Eliminar registro"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
