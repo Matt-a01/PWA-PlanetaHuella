@@ -31,7 +31,23 @@ const resolverApiBase = (): string => {
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1';
 
-  return esEntornoLocal ? 'http://localhost:3000/api' : '/api';
+  if (esEntornoLocal) {
+    return 'http://localhost:3000/api';
+  }
+
+  if (
+    typeof window !== 'undefined' &&
+    window.location.hostname.includes('planeta-huella-frontend') &&
+    window.location.hostname.endsWith('.onrender.com')
+  ) {
+    const backendHost = window.location.hostname.replace(
+      'planeta-huella-frontend',
+      'planeta-huella-backend'
+    );
+    return `https://${backendHost}/api`;
+  }
+
+  return '/api';
 };
 
 export const API_BASE = resolverApiBase();

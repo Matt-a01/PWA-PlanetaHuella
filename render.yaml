@@ -17,7 +17,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGIN
-        sync: false
+        value: https://planeta-huella-frontend-lsf3.onrender.com,https://planeta-huella-frontend.onrender.com,http://localhost:5173
 
   # 2. Sitio Estático Frontend PWA (React 19 + Vite 8)
   - type: web
@@ -38,4 +38,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        sync: false
+        value: https://planeta-huella-backend-lsf3.onrender.com/api
