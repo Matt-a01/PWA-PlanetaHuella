@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { env } from './config/env.js';
+import { sembrarCatalogoInicial } from './seeds/catalog.seed.js';
 
 let ultimoErrorDB: string | null = null;
 let promesaConexionEnCurso: Promise<boolean> | null = null;
@@ -23,6 +24,7 @@ const conectarDB = async (): Promise<boolean> => {
       });
       ultimoErrorDB = null;
       console.log('¡Conexión exitosa a MongoDB Atlas!');
+      await sembrarCatalogoInicial();
       return true;
     } catch (error: unknown) {
       ultimoErrorDB =
