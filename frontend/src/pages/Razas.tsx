@@ -40,6 +40,7 @@ export default function Razas() {
   const [nuevaDesc, setNuevaDesc] = useState('');
   const [nuevaImgBase64, setNuevaImgBase64] = useState('');
   const [nombreArchivo, setNombreArchivo] = useState('');
+  const [errorImagenAdmin, setErrorImagenAdmin] = useState('');
   const [tareasSugeridasForm, setTareasSugeridasForm] = useState<string[]>([]);
   const [tareaInput, setTareaInput] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -69,6 +70,7 @@ export default function Razas() {
     setNuevaDesc('');
     setNuevaImgBase64('');
     setNombreArchivo('');
+    setErrorImagenAdmin('');
     setTareasSugeridasForm(['Dar alimento adecuado', 'Renovar agua fresca', 'Cuidado diario']);
     setTareaInput('');
     setModalAdminAbierto(true);
@@ -81,6 +83,7 @@ export default function Razas() {
     setNuevaDesc(raza.desc);
     setNuevaImgBase64(raza.img || '');
     setNombreArchivo('');
+    setErrorImagenAdmin('');
     setTareasSugeridasForm(
       raza.suggestedTasks?.length
         ? [...raza.suggestedTasks]
@@ -93,18 +96,26 @@ export default function Razas() {
   const manejarSeleccionMultimedia = async (e: ChangeEvent<HTMLInputElement>) => {
     const archivo = e.target.files?.[0];
     if (!archivo) return;
+    setErrorImagenAdmin('');
     try {
+      const comprimida = await comprimirImagenMultimedia(archivo);
       setNombreArchivo(archivo.name);
-      const comprimida = await comprimirImagenMultimedia(archivo, 720, 0.82);
       setNuevaImgBase64(comprimida);
-    } catch {
+    } catch (err) {
       setNombreArchivo('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setErrorImagenAdmin(
+        err instanceof Error ? err.message : 'No se pudo procesar la imagen seleccionada.'
+      );
     }
   };
 
   const quitarImagenMultimedia = () => {
     setNuevaImgBase64('');
     setNombreArchivo('');
+    setErrorImagenAdmin('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -320,7 +331,7 @@ export default function Razas() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           onChange={manejarSeleccionMultimedia}
           className="hidden"
         />
@@ -369,7 +380,18 @@ export default function Razas() {
             </div>
 
             {nombreArchivo && (
-              <p className="text-[11px] text-gray-400 mt-1">Imagen seleccionada: {nombreArchivo}</p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Imagen optimizada: {nombreArchivo}
+              </p>
+            )}
+
+            {errorImagenAdmin && (
+              <p
+                role="alert"
+                className="mt-2 w-full bg-red-50 border border-red-200 text-red-700 text-xs font-medium px-3 py-2 rounded-xl text-center"
+              >
+                {errorImagenAdmin}
+              </p>
             )}
           </div>
 
