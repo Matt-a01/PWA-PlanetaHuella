@@ -3,8 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import mongoose from 'mongoose';
-import { env } from './config/env.js';
-import conectarDB from './database.js';
+import { env, esOrigenPermitido } from './config/env.js';
+import conectarDB, { obtenerUltimoErrorDB } from './database.js';
 import { apiLimiter } from './middlewares/rateLimit.middleware.js';
 import { errorMiddleware } from './middlewares/error.middleware.js';
 import authRoutes from './routes/auth.routes.js';
@@ -15,32 +15,43 @@ import catalogRoutes from './routes/catalog.routes.js';
 
 const app = express();
 
-// Cabeceras HTTP de seguridad (OWASP) y compresión de respuestas
-app.use(helmet());
-app.use(compression());
+// Necesario detrás del balanceador / reverse proxy de Render para X-Forwarded-For y express-rate-limit
+app.set('trust proxy', 1);
 
-// Configuración estricta de orígenes permitidos mediante CORS_ORIGIN
+// Configuración de CORS aplicada ANTES de Helmet y rate-limiting para garantizar preflights OPTIONS 204
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    if (esOrigenPermitido(origin)) {
+      callback(null, true);
+      return;
+    }
+    console.warn(
+      `⚠️ Petición bloqueada por CORS desde el origen "${origin}". Orígenes permitidos: ${env.corsOrigins.join(', ')}`
+    );
+    callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('/{*splat}', cors(corsOptions));
+
+// Cabeceras HTTP de seguridad (OWASP) permitiendo consumo cross-origin desde el Frontend en Render
 app.use(
-  cors({
-    origin: (origin, callback) => {
-      const normalizedOrigin = origin?.trim().replace(/\/$/, '');
-      if (!normalizedOrigin || env.corsOrigins.includes(normalizedOrigin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error('Origen no permitido por la política CORS.'));
-    },
-    credentials: true,
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
+app.use(compression());
 
 // Límite controlado de 2 MB para payloads JSON e imágenes comprimidas
 app.use(express.json({ limit: '2mb' }));
 
 // Limitador general de peticiones sobre la API
 app.use('/api', apiLimiter);
-
-conectarDB();
 
 // Endpoint de salud para monitoreo de estado del servidor y conexión a MongoDB
 app.get('/api/health', (_req, res) => {
@@ -53,12 +64,33 @@ app.get('/api/health', (_req, res) => {
   const readyState = mongoose.connection.readyState;
   const conectado = readyState === 1;
 
-  res.status(conectado ? 200 : 503).json({
+  res.status(200).json({
     ok: conectado,
     status: conectado ? 'online' : 'degraded',
     database: estadosConexion[readyState] ?? 'unknown',
+    ...(obtenerUltimoErrorDB() ? { dbError: obtenerUltimoErrorDB() } : {}),
     timestamp: new Date().toISOString(),
   });
+});
+
+// Garantiza conexión activa a MongoDB Atlas antes de procesar rutas de datos (evitando 502 sin cabeceras CORS)
+app.use('/api', async (_req, res, next) => {
+  if (mongoose.connection.readyState === 1) {
+    next();
+    return;
+  }
+
+  const conectado = await conectarDB();
+  if (!conectado) {
+    res.status(503).json({
+      ok: false,
+      error:
+        'El servidor backend está activo, pero no pudo conectarse a MongoDB Atlas. Verifica MONGO_URI en Render y que Network Access en MongoDB Atlas tenga permitido 0.0.0.0/0.',
+    });
+    return;
+  }
+
+  next();
 });
 
 // Endpoints principales de la API RESTful
@@ -79,6 +111,11 @@ app.get('/', (_req, res) => {
 // Manejador centralizado de errores (debe registrarse después de todas las rutas)
 app.use(errorMiddleware);
 
-app.listen(env.PORT, () => {
-  console.log(`Servidor corriendo en el puerto ${env.PORT}`);
-});
+const iniciarServidor = (): void => {
+  app.listen(env.PORT, '0.0.0.0', () => {
+    console.log(`Servidor corriendo en el puerto ${env.PORT}`);
+    void conectarDB();
+  });
+};
+
+iniciarServidor();

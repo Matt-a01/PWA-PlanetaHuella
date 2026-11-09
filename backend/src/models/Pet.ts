@@ -15,4 +15,7 @@ const petSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Índice compuesto para listar rápidamente las mascotas de un propietario ordenadas por fecha de creación
+petSchema.index({ ownerId: 1, createdAt: -1 });
+
 export default mongoose.model('Pet', petSchema);

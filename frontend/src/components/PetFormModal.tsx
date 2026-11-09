@@ -58,6 +58,7 @@ function FormularioMascotaInterno({
   // Sin imagen genérica predeterminada: muestra silueta hasta que el usuario suba una foto
   const [imageUrl, setImageUrl] = useState(mascotaEditar?.imageUrl || '');
   const [nombreArchivo, setNombreArchivo] = useState('');
+  const [errorImagen, setErrorImagen] = useState('');
   const [tareasPersonalizadas, setTareasPersonalizadas] = useState<string[]>(() =>
     mascotaEditar ? [] : obtenerTareasSugeridas('Perro', 'Golden Retriever')
   );
@@ -98,12 +99,19 @@ function FormularioMascotaInterno({
   const manejarSeleccionImagen = async (e: ChangeEvent<HTMLInputElement>) => {
     const archivo = e.target.files?.[0];
     if (!archivo) return;
+    setErrorImagen('');
     try {
+      const base64 = await comprimirImagenMultimedia(archivo);
       setNombreArchivo(archivo.name);
-      const base64 = await comprimirImagenMultimedia(archivo, 600, 0.8);
       setImageUrl(base64);
-    } catch {
+    } catch (err) {
       setNombreArchivo('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setErrorImagen(
+        err instanceof Error ? err.message : 'No se pudo procesar la imagen seleccionada.'
+      );
     }
   };
 
@@ -111,6 +119,7 @@ function FormularioMascotaInterno({
   const quitarImagenSeleccionada = () => {
     setImageUrl('');
     setNombreArchivo('');
+    setErrorImagen('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -157,7 +166,7 @@ function FormularioMascotaInterno({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         onChange={manejarSeleccionImagen}
         className="hidden"
       />
@@ -205,11 +214,20 @@ function FormularioMascotaInterno({
 
         <p className="text-[11px] text-gray-400 mt-1.5 text-center">
           {nombreArchivo
-            ? `Archivo: ${nombreArchivo}`
+            ? `Archivo optimizado: ${nombreArchivo}`
             : imageUrl
               ? 'Al quitar la foto se mostrará una silueta limpia sin imágenes genéricas'
-              : 'Sin foto asignada (se mostrará el símbolo de su especie)'}
+              : 'Formatos JPG, PNG o WebP (máx. 10 MB • compresión automática WebP)'}
         </p>
+
+        {errorImagen && (
+          <p
+            role="alert"
+            className="mt-2 w-full bg-red-50 border border-red-200 text-red-700 text-xs font-medium px-3 py-2 rounded-xl text-center"
+          >
+            {errorImagen}
+          </p>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3.5">

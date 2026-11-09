@@ -9,6 +9,7 @@ import {
   updatePetSchema,
   objectIdSchema,
 } from '../schemas/validation.schemas.js';
+import { obtenerFechaReferencia, formatearTareaParaFecha } from './tasks.routes.js';
 
 const router = express.Router();
 
@@ -73,10 +74,12 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction): Prom
       return;
     }
 
-    const [records, tasks] = await Promise.all([
+    const todayStr = obtenerFechaReferencia(req.query.date);
+    const [records, tasksDocs] = await Promise.all([
       MedicalRecord.find({ petId: pet._id }).sort({ date: -1 }),
       Task.find({ petId: pet._id }).populate('petId', 'name species'),
     ]);
+    const tasks = tasksDocs.map((t) => formatearTareaParaFecha(t, todayStr));
 
     res.json({ ok: true, pet, records, tasks });
   } catch (error) {
@@ -127,6 +130,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
         title: titulo.trim(),
         iconType: elegirIconoTarea(titulo),
         isCompleted: false,
+        lastCompletedDate: null,
         petId: nuevaMascota._id,
       }));
       await Task.insertMany(documentosTareas);

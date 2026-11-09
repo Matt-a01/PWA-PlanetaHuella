@@ -6,6 +6,44 @@ import { createTaskSchema, objectIdSchema } from '../schemas/validation.schemas.
 
 const router = express.Router();
 
+const PATRON_FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+export const obtenerFechaLocalISO = (fecha = new Date()): string => {
+  const anio = fecha.getFullYear();
+  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+  const dia = String(fecha.getDate()).padStart(2, '0');
+  return `${anio}-${mes}-${dia}`;
+};
+
+export const obtenerFechaReferencia = (queryDate?: unknown, bodyDate?: unknown): string => {
+  if (typeof queryDate === 'string' && PATRON_FECHA_ISO.test(queryDate.trim())) {
+    return queryDate.trim();
+  }
+  if (typeof bodyDate === 'string' && PATRON_FECHA_ISO.test(bodyDate.trim())) {
+    return bodyDate.trim();
+  }
+  return obtenerFechaLocalISO();
+};
+
+export const formatearTareaParaFecha = (tareaDoc: unknown, todayStr: string) => {
+  const raw =
+    tareaDoc &&
+    typeof tareaDoc === 'object' &&
+    'toObject' in tareaDoc &&
+    typeof (tareaDoc as { toObject: () => Record<string, unknown> }).toObject === 'function'
+      ? (tareaDoc as { toObject: () => Record<string, unknown> }).toObject()
+      : { ...(tareaDoc as Record<string, unknown>) };
+
+  const lastCompletedDate =
+    typeof raw.lastCompletedDate === 'string' ? raw.lastCompletedDate : null;
+
+  return {
+    ...raw,
+    lastCompletedDate,
+    isCompleted: lastCompletedDate === todayStr,
+  };
+};
+
 // Todas las rutas de tareas requieren sesión JWT válida
 router.use(requireAuth);
 
@@ -24,9 +62,10 @@ const detectarIcono = (titulo: string, iconoManual?: string): string => {
   return 'bone';
 };
 
-// GET /api/tasks - Obtiene únicamente las tareas vinculadas a las mascotas del usuario autenticado
+// GET /api/tasks - Obtiene las tareas del usuario calculando isCompleted según la fecha del día (?date=YYYY-MM-DD)
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const todayStr = obtenerFechaReferencia(req.query.date);
     const petIdQuery = typeof req.query.petId === 'string' ? req.query.petId.trim() : '';
 
     if (petIdQuery) {
@@ -44,7 +83,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
         return;
       }
 
-      const tasks = await Task.find({ petId: mascota._id }).populate('petId', 'name species');
+      const tasksDocs = await Task.find({ petId: mascota._id }).populate('petId', 'name species');
+      const tasks = tasksDocs.map((t) => formatearTareaParaFecha(t, todayStr));
       res.json({ ok: true, tasks });
       return;
     }
@@ -52,10 +92,11 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     const mascotasUsuario = await Pet.find({ ownerId: req.user!.id }).select('_id');
     const idsMascotas = mascotasUsuario.map((m) => m._id);
 
-    const tasks = await Task.find({ petId: { $in: idsMascotas } }).populate(
+    const tasksDocs = await Task.find({ petId: { $in: idsMascotas } }).populate(
       'petId',
       'name species'
     );
+    const tasks = tasksDocs.map((t) => formatearTareaParaFecha(t, todayStr));
     res.json({ ok: true, tasks });
   } catch (error) {
     next(error);
@@ -65,6 +106,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 // POST /api/tasks - Registra una tarea personalizada verificando que la mascota pertenezca al usuario
 router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const todayStr = obtenerFechaReferencia(req.query.date);
     const { title, iconType, petId } = createTaskSchema.parse(req.body);
 
     const mascota = await Pet.findById(petId).select('_id ownerId');
@@ -85,19 +127,24 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       title,
       iconType: detectarIcono(title, iconType),
       isCompleted: false,
+      lastCompletedDate: null,
       petId: mascota._id,
     });
 
     const tareaConMascota = await nuevaTarea.populate('petId', 'name species');
-    res.status(201).json({ ok: true, task: tareaConMascota });
+    res.status(201).json({ ok: true, task: formatearTareaParaFecha(tareaConMascota, todayStr) });
   } catch (error) {
     next(error);
   }
 });
 
-// PATCH /api/tasks/:id - Alterna el estado completado/pendiente verificando propiedad de la mascota
+// PATCH /api/tasks/:id - Alterna el estado completado del día usando lastCompletedDate para reinicio automático diario
 router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const todayStr = obtenerFechaReferencia(
+      req.query.date,
+      (req.body as { date?: unknown } | undefined)?.date
+    );
     const taskId = objectIdSchema.parse(req.params.id);
     const tarea = await Task.findById(taskId);
 
@@ -120,11 +167,17 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    tarea.isCompleted = !tarea.isCompleted;
+    if (tarea.lastCompletedDate === todayStr) {
+      tarea.lastCompletedDate = null;
+      tarea.isCompleted = false;
+    } else {
+      tarea.lastCompletedDate = todayStr;
+      tarea.isCompleted = true;
+    }
     await tarea.save();
 
     const tareaActualizada = await tarea.populate('petId', 'name species');
-    res.json({ ok: true, task: tareaActualizada });
+    res.json({ ok: true, task: formatearTareaParaFecha(tareaActualizada, todayStr) });
   } catch (error) {
     next(error);
   }
