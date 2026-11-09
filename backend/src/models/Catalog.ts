@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 // Esquema para almacenar razas de perros, gatos y otros animales en MongoDB
 const breedSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
+    name: { type: String, required: true, unique: true, trim: true },
     category: { type: String, enum: ['Perros', 'Gatos', 'Otros'], default: 'Perros' },
     desc: { type: String, default: '' },
     img: { type: String, default: '' },
@@ -17,6 +17,9 @@ const breedSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Índice por categoría para acelerar el filtrado del catálogo (Perros, Gatos, Otros)
+breedSchema.index({ category: 1 });
 
 // Esquema para almacenar tips y recomendaciones en MongoDB
 const tipSchema = new mongoose.Schema(

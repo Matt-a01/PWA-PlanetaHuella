@@ -45,11 +45,10 @@ export default function Perfil() {
             <span>MongoDB Atlas</span>
           </div>
           <div
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
-              esAdmin
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${esAdmin
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                 : 'bg-slate-50 text-slate-700 border-slate-200'
-            }`}
+              }`}
           >
             <Shield size={13} />
             <span>{esAdmin ? 'Rol en BD: Administrador' : 'Rol en BD: Usuario'}</span>

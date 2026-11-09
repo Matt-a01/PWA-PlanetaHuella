@@ -10,4 +10,7 @@ const medicalRecordSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Índice compuesto para obtener el historial clínico por mascota ordenado del más reciente al más antiguo
+medicalRecordSchema.index({ petId: 1, date: -1 });
+
 export default mongoose.model('MedicalRecord', medicalRecordSchema);
