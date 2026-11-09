@@ -24,6 +24,7 @@ export interface Task {
   _id: string;
   title: string;
   isCompleted: boolean;
+  lastCompletedDate?: string | null;
   iconType: string;
   petId: { _id: string; name: string } | string;
 }
@@ -466,11 +467,29 @@ interface PetState {
   eliminarTipCatalogo: (id: string) => Promise<void>;
 }
 
+const obtenerFechaHoyISO = (): string => {
+  const ahora = new Date();
+  const anio = ahora.getFullYear();
+  const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+  const dia = String(ahora.getDate()).padStart(2, '0');
+  return `${anio}-${mes}-${dia}`;
+};
+
+const normalizarTareasPorDia = (lista: Task[], fechaHoy = obtenerFechaHoyISO()): Task[] =>
+  lista.map((tarea) =>
+    tarea.lastCompletedDate !== undefined
+      ? {
+          ...tarea,
+          isCompleted: tarea.lastCompletedDate === fechaHoy,
+        }
+      : tarea
+  );
+
 const uidInicial = obtenerUserIdActivo();
 
 export const usePetStore = create<PetState>((set, get) => ({
   pets: uidInicial ? leerJSON<Pet[]>(`ph_pets_${uidInicial}`, []) : [],
-  tasks: uidInicial ? leerJSON<Task[]>(`ph_tasks_${uidInicial}`, []) : [],
+  tasks: uidInicial ? normalizarTareasPorDia(leerJSON<Task[]>(`ph_tasks_${uidInicial}`, [])) : [],
   medicalRecords: uidInicial
     ? leerJSON<Record<string, MedicalRecordItem[]>>(`ph_medical_${uidInicial}`, {})
     : {},
@@ -547,10 +566,11 @@ export const usePetStore = create<PetState>((set, get) => ({
     const clavePets = `ph_pets_${uid}`;
     const claveTasks = `ph_tasks_${uid}`;
     const claveMedical = `ph_medical_${uid}`;
+    const fechaHoy = obtenerFechaHoyISO();
 
     set({
       pets: leerJSON<Pet[]>(clavePets, []),
-      tasks: leerJSON<Task[]>(claveTasks, []),
+      tasks: normalizarTareasPorDia(leerJSON<Task[]>(claveTasks, []), fechaHoy),
       medicalRecords: leerJSON<Record<string, MedicalRecordItem[]>>(claveMedical, {}),
     });
 
@@ -559,7 +579,7 @@ export const usePetStore = create<PetState>((set, get) => ({
     try {
       const [dataPets, dataTasks] = await Promise.all([
         apiGet<{ ok: boolean; pets: Pet[] }>('/pets'),
-        apiGet<{ ok: boolean; tasks: Task[] }>('/tasks'),
+        apiGet<{ ok: boolean; tasks: Task[] }>(`/tasks?date=${fechaHoy}`),
       ]);
 
       // Acepta arreglos vacíos [] cuando la cuenta es nueva o se eliminó la última mascota
@@ -722,15 +742,22 @@ export const usePetStore = create<PetState>((set, get) => ({
     const uid = obtenerUserIdActivo(ownerId);
     const claveTasks = uid ? `ph_tasks_${uid}` : null;
     const estadoPrevio = get().tasks;
+    const fechaHoy = obtenerFechaHoyISO();
 
-    const nuevaLista = estadoPrevio.map((t) =>
-      t._id === id ? { ...t, isCompleted: !t.isCompleted } : t
-    );
+    const nuevaLista = estadoPrevio.map((t) => {
+      if (t._id !== id) return t;
+      const completadaAhora = !t.isCompleted;
+      return {
+        ...t,
+        isCompleted: completadaAhora,
+        lastCompletedDate: completadaAhora ? fechaHoy : null,
+      };
+    });
     set({ tasks: nuevaLista });
     if (claveTasks) guardarJSON(claveTasks, nuevaLista);
 
     try {
-      const data = await apiPatch<{ ok: boolean; task: Task }>(`/tasks/${id}`);
+      const data = await apiPatch<{ ok: boolean; task: Task }>(`/tasks/${id}?date=${fechaHoy}`);
       if (data.ok && data.task) {
         const sincronizada = get().tasks.map((t) => (t._id === id ? data.task : t));
         set({ tasks: sincronizada });
