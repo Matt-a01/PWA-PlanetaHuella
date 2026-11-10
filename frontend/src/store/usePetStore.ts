@@ -7,6 +7,24 @@ import {
   apiDelete,
   ApiError,
 } from '../services/apiClient';
+import {
+  obtenerPetsOffline,
+  guardarPetsOffline,
+  obtenerTasksOffline,
+  guardarTasksOffline,
+  obtenerMedicalOffline,
+  guardarMedicalOffline,
+  obtenerCatalogoRazasOffline,
+  guardarCatalogoRazasOffline,
+  obtenerCatalogoTipsOffline,
+  guardarCatalogoTipsOffline,
+  encolarOperacionOutbox,
+} from '../services/offlineStorage';
+import {
+  sincronizarColaPendiente,
+  actualizarContadorPendientes,
+  registrarManejadorReconexion,
+} from '../services/syncManager';
 
 export interface Pet {
   _id: string;
@@ -485,6 +503,9 @@ const normalizarTareasPorDia = (lista: Task[], fechaHoy = obtenerFechaHoyISO()):
       : tarea
   );
 
+const estaSinConexion = (): boolean =>
+  typeof navigator !== 'undefined' && navigator.onLine === false;
+
 const uidInicial = obtenerUserIdActivo();
 
 export const usePetStore = create<PetState>((set, get) => ({
@@ -503,10 +524,24 @@ export const usePetStore = create<PetState>((set, get) => ({
       tasks: [],
       medicalRecords: {},
     });
+    void actualizarContadorPendientes(null);
   },
 
   cargarCatalogo: async () => {
     try {
+      const [razasIDB, tipsIDB] = await Promise.all([
+        obtenerCatalogoRazasOffline(get().catalogRazas),
+        obtenerCatalogoTipsOffline(get().catalogTips),
+      ]);
+      if (razasIDB.length > 0) {
+        set({ catalogRazas: normalizarListaRazas(razasIDB) });
+      }
+      if (tipsIDB.length > 0) {
+        set({ catalogTips: normalizarListaTips(tipsIDB) });
+      }
+
+      if (estaSinConexion()) return;
+
       const [dataRazas, dataTips] = await Promise.all([
         apiGet<{ ok: boolean; items: BreedItem[] }>('/catalog/razas'),
         apiGet<{ ok: boolean; recomendaciones: TipItem[] }>('/catalog/recomendaciones'),
@@ -516,14 +551,16 @@ export const usePetStore = create<PetState>((set, get) => ({
         const razasLimpias = normalizarListaRazas(dataRazas.items);
         set({ catalogRazas: razasLimpias });
         guardarJSON('ph_catalog_razas', razasLimpias);
+        await guardarCatalogoRazasOffline(razasLimpias);
       }
       if (dataTips.ok && Array.isArray(dataTips.recomendaciones)) {
         const tipsLimpios = normalizarListaTips(dataTips.recomendaciones);
         set({ catalogTips: tipsLimpios });
         guardarJSON('ph_catalog_tips', tipsLimpios);
+        await guardarCatalogoTipsOffline(tipsLimpios);
       }
     } catch {
-      // Mantiene el catálogo en caché local si no hay conectividad
+      // Mantiene el catálogo en caché local (IndexedDB) si no hay conectividad
     }
   },
 
@@ -568,15 +605,39 @@ export const usePetStore = create<PetState>((set, get) => ({
     const claveMedical = `ph_medical_${uid}`;
     const fechaHoy = obtenerFechaHoyISO();
 
+    // 1. Carga inmediata desde IndexedDB (con respaldo de localStorage si hubiera datos previos)
+    const [petsCache, tasksCache, medicalCache] = await Promise.all([
+      obtenerPetsOffline(uid),
+      obtenerTasksOffline(uid),
+      obtenerMedicalOffline(uid),
+    ]);
+
+    const petsIniciales = petsCache.length > 0 ? petsCache : leerJSON<Pet[]>(clavePets, []);
+    const tasksIniciales =
+      tasksCache.length > 0 ? tasksCache : leerJSON<Task[]>(claveTasks, []);
+    const medicalInicial =
+      Object.keys(medicalCache).length > 0
+        ? medicalCache
+        : leerJSON<Record<string, MedicalRecordItem[]>>(claveMedical, {});
+
     set({
-      pets: leerJSON<Pet[]>(clavePets, []),
-      tasks: normalizarTareasPorDia(leerJSON<Task[]>(claveTasks, []), fechaHoy),
-      medicalRecords: leerJSON<Record<string, MedicalRecordItem[]>>(claveMedical, {}),
+      pets: petsIniciales,
+      tasks: normalizarTareasPorDia(tasksIniciales, fechaHoy),
+      medicalRecords: medicalInicial,
     });
 
+    await actualizarContadorPendientes(uid);
     await get().cargarCatalogo();
 
+    if (estaSinConexion()) {
+      return;
+    }
+
     try {
+      // 2. Primero vacía y sincroniza en orden FIFO la cola Outbox hacia el backend
+      await sincronizarColaPendiente(uid);
+
+      // 3. Después descarga el estado fresco de MongoDB
       const [dataPets, dataTasks] = await Promise.all([
         apiGet<{ ok: boolean; pets: Pet[] }>('/pets'),
         apiGet<{ ok: boolean; tasks: Task[] }>(`/tasks?date=${fechaHoy}`),
@@ -586,13 +647,15 @@ export const usePetStore = create<PetState>((set, get) => ({
       if (dataPets.ok && Array.isArray(dataPets.pets)) {
         set({ pets: dataPets.pets });
         guardarJSON(clavePets, dataPets.pets);
+        await guardarPetsOffline(uid, dataPets.pets);
       }
       if (dataTasks.ok && Array.isArray(dataTasks.tasks)) {
         set({ tasks: dataTasks.tasks });
         guardarJSON(claveTasks, dataTasks.tasks);
+        await guardarTasksOffline(uid, dataTasks.tasks);
       }
     } catch {
-      // Mantiene la caché del usuario activo si falla la conexión
+      // Mantiene la caché de IndexedDB del usuario activo si falla la conexión
     }
   },
 
@@ -617,31 +680,57 @@ export const usePetStore = create<PetState>((set, get) => ({
       customTasks: tareasElegidas,
     };
 
+    const registrarMascotaOffline = async () => {
+      if (!uid) return;
+      const nuevoId = `temp_${Date.now()}`;
+      const mascotaLocal: Pet = { ...nueva, _id: nuevoId };
+      const nuevasTareasLocal: Task[] = tareasElegidas.map((titulo, idx) => ({
+        _id: `${nuevoId}_t_${idx}`,
+        title: titulo,
+        isCompleted: false,
+        lastCompletedDate: null,
+        iconType: detectarIcono(titulo),
+        petId: { _id: nuevoId, name: nueva.name },
+      }));
+
+      const listaPets = [...get().pets, mascotaLocal];
+      const listaTasks = [...get().tasks, ...nuevasTareasLocal];
+      set({ pets: listaPets, tasks: listaTasks });
+      if (clavePets) guardarJSON(clavePets, listaPets);
+      if (claveTasks) guardarJSON(claveTasks, listaTasks);
+      await Promise.all([
+        guardarPetsOffline(uid, listaPets),
+        guardarTasksOffline(uid, listaTasks),
+        encolarOperacionOutbox({
+          userId: uid,
+          type: 'CREATE_PET',
+          endpoint: '/pets',
+          method: 'POST',
+          payload,
+          tempId: nuevoId,
+          petId: nuevoId,
+        }),
+      ]);
+      await actualizarContadorPendientes(uid);
+    };
+
+    if (estaSinConexion() && uid) {
+      await registrarMascotaOffline();
+      return;
+    }
+
     try {
       const data = await apiPost<{ ok: boolean; pet: Pet }>('/pets', payload);
       if (data.ok && data.pet) {
         const nuevaLista = [...get().pets, data.pet];
         set({ pets: nuevaLista });
         if (clavePets) guardarJSON(clavePets, nuevaLista);
+        if (uid) await guardarPetsOffline(uid, nuevaLista);
         await get().cargarDatos(uid ?? undefined);
       }
     } catch (error) {
       if (error instanceof ApiError && error.isNetworkError && uid) {
-        const nuevoId = `temp_${Date.now()}`;
-        const mascotaLocal: Pet = { ...nueva, _id: nuevoId };
-        const nuevasTareasLocal: Task[] = tareasElegidas.map((titulo, idx) => ({
-          _id: `${nuevoId}_t_${idx}`,
-          title: titulo,
-          isCompleted: false,
-          iconType: detectarIcono(titulo),
-          petId: { _id: nuevoId, name: nueva.name },
-        }));
-
-        const listaPets = [...get().pets, mascotaLocal];
-        const listaTasks = [...get().tasks, ...nuevasTareasLocal];
-        set({ pets: listaPets, tasks: listaTasks });
-        if (clavePets) guardarJSON(clavePets, listaPets);
-        if (claveTasks) guardarJSON(claveTasks, listaTasks);
+        await registrarMascotaOffline();
       }
     }
   },
@@ -660,20 +749,43 @@ export const usePetStore = create<PetState>((set, get) => ({
       imageUrl: datos.imageUrl ?? '',
     };
 
+    const actualizarMascotaOffline = async () => {
+      if (!uid) return;
+      const listaActualizada = get().pets.map((p) =>
+        p._id === id ? { ...p, ...datos, _id: id } : p
+      );
+      set({ pets: listaActualizada });
+      if (clavePets) guardarJSON(clavePets, listaActualizada);
+      await Promise.all([
+        guardarPetsOffline(uid, listaActualizada),
+        encolarOperacionOutbox({
+          userId: uid,
+          type: 'UPDATE_PET',
+          endpoint: `/pets/${id}`,
+          method: 'PUT',
+          payload,
+          petId: id,
+        }),
+      ]);
+      await actualizarContadorPendientes(uid);
+    };
+
+    if (estaSinConexion() && uid) {
+      await actualizarMascotaOffline();
+      return;
+    }
+
     try {
       const data = await apiPut<{ ok: boolean; pet: Pet }>(`/pets/${id}`, payload);
       if (data.ok && data.pet) {
         const listaActualizada = get().pets.map((p) => (p._id === id ? data.pet : p));
         set({ pets: listaActualizada });
         if (clavePets) guardarJSON(clavePets, listaActualizada);
+        if (uid) await guardarPetsOffline(uid, listaActualizada);
       }
     } catch (error) {
       if (error instanceof ApiError && error.isNetworkError && uid) {
-        const listaActualizada = get().pets.map((p) =>
-          p._id === id ? { ...p, ...datos, _id: id } : p
-        );
-        set({ pets: listaActualizada });
-        if (clavePets) guardarJSON(clavePets, listaActualizada);
+        await actualizarMascotaOffline();
       }
     }
   },
@@ -684,11 +796,17 @@ export const usePetStore = create<PetState>((set, get) => ({
     const claveTasks = uid ? `ph_tasks_${uid}` : null;
     const claveMedical = uid ? `ph_medical_${uid}` : null;
 
-    try {
-      await apiDelete<{ ok: boolean }>(`/pets/${id}`);
-    } catch (error) {
-      if (!(error instanceof ApiError && error.isNetworkError)) {
-        return;
+    let encolarBorrado = estaSinConexion();
+
+    if (!encolarBorrado) {
+      try {
+        await apiDelete<{ ok: boolean }>(`/pets/${id}`);
+      } catch (error) {
+        if (error instanceof ApiError && error.isNetworkError) {
+          encolarBorrado = true;
+        } else {
+          return;
+        }
       }
     }
 
@@ -704,36 +822,82 @@ export const usePetStore = create<PetState>((set, get) => ({
     if (clavePets) guardarJSON(clavePets, listaPets);
     if (claveTasks) guardarJSON(claveTasks, listaTasks);
     if (claveMedical) guardarJSON(claveMedical, registrosRestantes);
+
+    if (uid) {
+      await Promise.all([
+        guardarPetsOffline(uid, listaPets),
+        guardarTasksOffline(uid, listaTasks),
+        guardarMedicalOffline(uid, registrosRestantes),
+      ]);
+
+      if (encolarBorrado) {
+        await encolarOperacionOutbox({
+          userId: uid,
+          type: 'DELETE_PET',
+          endpoint: `/pets/${id}`,
+          method: 'DELETE',
+          petId: id,
+        });
+        await actualizarContadorPendientes(uid);
+      }
+    }
   },
 
   agregarTarea: async (petId, petName, title, ownerId) => {
     const uid = obtenerUserIdActivo(ownerId);
     const claveTasks = uid ? `ph_tasks_${uid}` : null;
     const iconType = detectarIcono(title);
+    const payload = {
+      petId,
+      title: title.trim(),
+      iconType,
+    };
+
+    const registrarTareaOffline = async () => {
+      if (!uid) return;
+      const tempTaskId = `t_${Date.now()}`;
+      const nuevaTarea: Task = {
+        _id: tempTaskId,
+        title: title.trim(),
+        isCompleted: false,
+        lastCompletedDate: null,
+        iconType,
+        petId: { _id: petId, name: petName },
+      };
+      const nuevaLista = [...get().tasks, nuevaTarea];
+      set({ tasks: nuevaLista });
+      if (claveTasks) guardarJSON(claveTasks, nuevaLista);
+      await Promise.all([
+        guardarTasksOffline(uid, nuevaLista),
+        encolarOperacionOutbox({
+          userId: uid,
+          type: 'CREATE_TASK',
+          endpoint: '/tasks',
+          method: 'POST',
+          payload,
+          tempId: tempTaskId,
+          petId,
+        }),
+      ]);
+      await actualizarContadorPendientes(uid);
+    };
+
+    if (estaSinConexion() && uid) {
+      await registrarTareaOffline();
+      return;
+    }
 
     try {
-      const data = await apiPost<{ ok: boolean; task: Task }>('/tasks', {
-        petId,
-        title: title.trim(),
-        iconType,
-      });
+      const data = await apiPost<{ ok: boolean; task: Task }>('/tasks', payload);
       if (data.ok && data.task) {
         const nuevaLista = [...get().tasks, data.task];
         set({ tasks: nuevaLista });
         if (claveTasks) guardarJSON(claveTasks, nuevaLista);
+        if (uid) await guardarTasksOffline(uid, nuevaLista);
       }
     } catch (error) {
       if (error instanceof ApiError && error.isNetworkError && uid) {
-        const nuevaTarea: Task = {
-          _id: `t_${Date.now()}`,
-          title: title.trim(),
-          isCompleted: false,
-          iconType,
-          petId: { _id: petId, name: petName },
-        };
-        const nuevaLista = [...get().tasks, nuevaTarea];
-        set({ tasks: nuevaLista });
-        if (claveTasks) guardarJSON(claveTasks, nuevaLista);
+        await registrarTareaOffline();
       }
     }
   },
@@ -755,6 +919,23 @@ export const usePetStore = create<PetState>((set, get) => ({
     });
     set({ tasks: nuevaLista });
     if (claveTasks) guardarJSON(claveTasks, nuevaLista);
+    if (uid) await guardarTasksOffline(uid, nuevaLista);
+
+    const encolarToggleOffline = async () => {
+      if (!uid || id.startsWith('temp_') || id.startsWith('t_')) return;
+      await encolarOperacionOutbox({
+        userId: uid,
+        type: 'TOGGLE_TASK',
+        endpoint: `/tasks/${id}?date=${fechaHoy}`,
+        method: 'PATCH',
+      });
+      await actualizarContadorPendientes(uid);
+    };
+
+    if (estaSinConexion() && uid) {
+      await encolarToggleOffline();
+      return;
+    }
 
     try {
       const data = await apiPatch<{ ok: boolean; task: Task }>(`/tasks/${id}?date=${fechaHoy}`);
@@ -762,11 +943,15 @@ export const usePetStore = create<PetState>((set, get) => ({
         const sincronizada = get().tasks.map((t) => (t._id === id ? data.task : t));
         set({ tasks: sincronizada });
         if (claveTasks) guardarJSON(claveTasks, sincronizada);
+        if (uid) await guardarTasksOffline(uid, sincronizada);
       }
     } catch (error) {
-      if (!(error instanceof ApiError && error.isNetworkError)) {
+      if (error instanceof ApiError && error.isNetworkError && uid) {
+        await encolarToggleOffline();
+      } else {
         set({ tasks: estadoPrevio });
         if (claveTasks) guardarJSON(claveTasks, estadoPrevio);
+        if (uid) await guardarTasksOffline(uid, estadoPrevio);
       }
     }
   },
@@ -779,13 +964,33 @@ export const usePetStore = create<PetState>((set, get) => ({
     const nuevaLista = estadoPrevio.filter((t) => t._id !== id);
     set({ tasks: nuevaLista });
     if (claveTasks) guardarJSON(claveTasks, nuevaLista);
+    if (uid) await guardarTasksOffline(uid, nuevaLista);
+
+    const encolarEliminacionTareaOffline = async () => {
+      if (!uid || id.startsWith('temp_') || id.startsWith('t_')) return;
+      await encolarOperacionOutbox({
+        userId: uid,
+        type: 'DELETE_TASK',
+        endpoint: `/tasks/${id}`,
+        method: 'DELETE',
+      });
+      await actualizarContadorPendientes(uid);
+    };
+
+    if (estaSinConexion() && uid) {
+      await encolarEliminacionTareaOffline();
+      return;
+    }
 
     try {
       await apiDelete<{ ok: boolean }>(`/tasks/${id}`);
     } catch (error) {
-      if (!(error instanceof ApiError && error.isNetworkError)) {
+      if (error instanceof ApiError && error.isNetworkError && uid) {
+        await encolarEliminacionTareaOffline();
+      } else {
         set({ tasks: estadoPrevio });
         if (claveTasks) guardarJSON(claveTasks, estadoPrevio);
+        if (uid) await guardarTasksOffline(uid, estadoPrevio);
       }
     }
   },
@@ -794,7 +999,19 @@ export const usePetStore = create<PetState>((set, get) => ({
     const uid = obtenerUserIdActivo();
     const claveMedical = uid ? `ph_medical_${uid}` : null;
 
+    if (uid) {
+      const cacheIDB = await obtenerMedicalOffline(uid);
+      if (cacheIDB[petId]) {
+        set({ medicalRecords: { ...get().medicalRecords, [petId]: cacheIDB[petId] } });
+      }
+    }
+
+    if (estaSinConexion()) return;
+
     try {
+      if (uid) {
+        await sincronizarColaPendiente(uid);
+      }
       const data = await apiGet<{ ok: boolean; records: MedicalRecordItem[] }>(
         `/medical/${petId}`
       );
@@ -803,42 +1020,69 @@ export const usePetStore = create<PetState>((set, get) => ({
         const actualizado = { ...get().medicalRecords, [petId]: data.records };
         set({ medicalRecords: actualizado });
         if (claveMedical) guardarJSON(claveMedical, actualizado);
+        if (uid) await guardarMedicalOffline(uid, actualizado);
       }
     } catch {
-      // Mantiene registros en caché local si no hay conexión
+      // Mantiene registros en caché local (IndexedDB) si no hay conexión
     }
   },
 
   agregarRegistroMedico: async (petId, type, date, notes) => {
     const uid = obtenerUserIdActivo();
     const claveMedical = uid ? `ph_medical_${uid}` : null;
+    const payload = {
+      petId,
+      type,
+      date,
+      notes: notes ?? '',
+    };
 
-    try {
-      const data = await apiPost<{ ok: boolean; record: MedicalRecordItem }>('/medical', {
-        petId,
+    const registrarMedicoOffline = async () => {
+      if (!uid) return;
+      const tempMedId = `med_${Date.now()}`;
+      const nuevo: MedicalRecordItem = {
+        _id: tempMedId,
         type,
         date,
-        notes: notes ?? '',
-      });
+        notes,
+        petId,
+      };
+      const previos = get().medicalRecords[petId] || [];
+      const actualizado = { ...get().medicalRecords, [petId]: [nuevo, ...previos] };
+      set({ medicalRecords: actualizado });
+      if (claveMedical) guardarJSON(claveMedical, actualizado);
+      await Promise.all([
+        guardarMedicalOffline(uid, actualizado),
+        encolarOperacionOutbox({
+          userId: uid,
+          type: 'CREATE_MEDICAL',
+          endpoint: '/medical',
+          method: 'POST',
+          payload,
+          tempId: tempMedId,
+          petId,
+        }),
+      ]);
+      await actualizarContadorPendientes(uid);
+    };
+
+    if (estaSinConexion() && uid) {
+      await registrarMedicoOffline();
+      return;
+    }
+
+    try {
+      const data = await apiPost<{ ok: boolean; record: MedicalRecordItem }>('/medical', payload);
       if (data.ok && data.record) {
         const previos = get().medicalRecords[petId] || [];
         const actualizado = { ...get().medicalRecords, [petId]: [data.record, ...previos] };
         set({ medicalRecords: actualizado });
         if (claveMedical) guardarJSON(claveMedical, actualizado);
+        if (uid) await guardarMedicalOffline(uid, actualizado);
       }
     } catch (error) {
       if (error instanceof ApiError && error.isNetworkError && uid) {
-        const nuevo: MedicalRecordItem = {
-          _id: `med_${Date.now()}`,
-          type,
-          date,
-          notes,
-          petId,
-        };
-        const previos = get().medicalRecords[petId] || [];
-        const actualizado = { ...get().medicalRecords, [petId]: [nuevo, ...previos] };
-        set({ medicalRecords: actualizado });
-        if (claveMedical) guardarJSON(claveMedical, actualizado);
+        await registrarMedicoOffline();
       }
     }
   },
@@ -847,11 +1091,16 @@ export const usePetStore = create<PetState>((set, get) => ({
     const uid = obtenerUserIdActivo();
     const claveMedical = uid ? `ph_medical_${uid}` : null;
 
-    try {
-      await apiDelete<{ ok: boolean }>(`/medical/${recordId}`);
-    } catch (error) {
-      if (!(error instanceof ApiError && error.isNetworkError)) {
-        return;
+    let encolarBorrado = estaSinConexion();
+    if (!encolarBorrado) {
+      try {
+        await apiDelete<{ ok: boolean }>(`/medical/${recordId}`);
+      } catch (error) {
+        if (error instanceof ApiError && error.isNetworkError) {
+          encolarBorrado = true;
+        } else {
+          return;
+        }
       }
     }
 
@@ -862,6 +1111,19 @@ export const usePetStore = create<PetState>((set, get) => ({
     };
     set({ medicalRecords: actualizado });
     if (claveMedical) guardarJSON(claveMedical, actualizado);
+    if (uid) {
+      await guardarMedicalOffline(uid, actualizado);
+      if (encolarBorrado && !recordId.startsWith('med_')) {
+        await encolarOperacionOutbox({
+          userId: uid,
+          type: 'DELETE_MEDICAL',
+          endpoint: `/medical/${recordId}`,
+          method: 'DELETE',
+          petId,
+        });
+        await actualizarContadorPendientes(uid);
+      }
+    }
   },
 
   agregarRazaCatalogo: async (nueva) => {
@@ -870,6 +1132,7 @@ export const usePetStore = create<PetState>((set, get) => ({
       const nuevaLista = [...get().catalogRazas, data.item];
       set({ catalogRazas: nuevaLista });
       guardarJSON('ph_catalog_razas', nuevaLista);
+      await guardarCatalogoRazasOffline(nuevaLista);
     }
   },
 
@@ -882,6 +1145,7 @@ export const usePetStore = create<PetState>((set, get) => ({
       const nuevaLista = get().catalogRazas.map((r) => (r._id === id ? data.item : r));
       set({ catalogRazas: nuevaLista });
       guardarJSON('ph_catalog_razas', nuevaLista);
+      await guardarCatalogoRazasOffline(nuevaLista);
     }
   },
 
@@ -891,6 +1155,7 @@ export const usePetStore = create<PetState>((set, get) => ({
       const nuevaLista = get().catalogRazas.filter((r) => r._id !== id);
       set({ catalogRazas: nuevaLista });
       guardarJSON('ph_catalog_razas', nuevaLista);
+      await guardarCatalogoRazasOffline(nuevaLista);
     }
   },
 
@@ -903,6 +1168,7 @@ export const usePetStore = create<PetState>((set, get) => ({
       const nuevaLista = [...get().catalogTips, data.tip];
       set({ catalogTips: nuevaLista });
       guardarJSON('ph_catalog_tips', nuevaLista);
+      await guardarCatalogoTipsOffline(nuevaLista);
     }
   },
 
@@ -915,6 +1181,7 @@ export const usePetStore = create<PetState>((set, get) => ({
       const nuevaLista = get().catalogTips.map((t) => (t._id === id ? data.tip : t));
       set({ catalogTips: nuevaLista });
       guardarJSON('ph_catalog_tips', nuevaLista);
+      await guardarCatalogoTipsOffline(nuevaLista);
     }
   },
 
@@ -924,6 +1191,15 @@ export const usePetStore = create<PetState>((set, get) => ({
       const nuevaLista = get().catalogTips.filter((t) => t._id !== id);
       set({ catalogTips: nuevaLista });
       guardarJSON('ph_catalog_tips', nuevaLista);
+      await guardarCatalogoTipsOffline(nuevaLista);
     }
   },
 }));
+
+// Reconexión automática: vacía la cola Outbox en orden FIFO y recarga desde MongoDB al volver la red
+registrarManejadorReconexion(() => {
+  const uid = obtenerUserIdActivo();
+  if (uid) {
+    void usePetStore.getState().cargarDatos(uid);
+  }
+});
