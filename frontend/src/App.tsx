@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import BottomNav from './components/BottomNav';
+import NetworkStatusBanner from './components/NetworkStatusBanner';
 import ProtectedRoute from './components/ProtectedRoute';
 import PublicOnlyRoute from './components/PublicOnlyRoute';
 import Auth from './pages/Auth';
@@ -20,6 +21,7 @@ function MainLayout() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans">
+      <NetworkStatusBanner />
       <Routes>
         {/* Rutas exclusivas para visitantes sin sesión activa */}
         <Route element={<PublicOnlyRoute />}>

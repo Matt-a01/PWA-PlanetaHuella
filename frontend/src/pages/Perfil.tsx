@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore, esUsuarioAdmin } from '../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, ShieldCheck, LogOut, Database, Shield, RefreshCw } from 'lucide-react';
+import InstallPWAButton from '../components/InstallPWAButton';
 
 export default function Perfil() {
   const { user, sincronizarRolDesdeBD, logout } = useAuthStore();
@@ -110,6 +111,8 @@ export default function Perfil() {
           </div>
         </div>
       </div>
+
+      <InstallPWAButton />
 
       <button
         onClick={handleLogout}
