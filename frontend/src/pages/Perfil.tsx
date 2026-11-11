@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore, esUsuarioAdmin } from '../store/useAuthStore';
-import { useNavigate } from 'react-router-dom';
-import { User, Mail, ShieldCheck, LogOut, Database, Shield, RefreshCw } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  User,
+  Mail,
+  ShieldCheck,
+  LogOut,
+  Database,
+  Shield,
+  RefreshCw,
+  ChevronRight,
+} from 'lucide-react';
 import InstallPWAButton from '../components/InstallPWAButton';
 
 export default function Perfil() {
@@ -111,6 +120,26 @@ export default function Perfil() {
           </div>
         </div>
       </div>
+
+      {esAdmin && (
+        <Link
+          to="/admin"
+          className="mb-6 bg-green-700 hover:bg-green-800 text-white rounded-2xl p-4 shadow-sm flex items-center justify-between transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+              <Shield size={20} />
+            </div>
+            <div>
+              <p className="text-sm font-bold">Panel de Administración</p>
+              <p className="text-xs text-green-100">
+                Ver métricas globales, usuarios registrados y catálogo
+              </p>
+            </div>
+          </div>
+          <ChevronRight size={18} className="shrink-0" />
+        </Link>
+      )}
 
       <InstallPWAButton />
 

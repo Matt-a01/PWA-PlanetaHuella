@@ -12,6 +12,7 @@ import petsRoutes from './routes/pets.routes.js';
 import tasksRoutes from './routes/tasks.routes.js';
 import medicalRoutes from './routes/medical.routes.js';
 import catalogRoutes from './routes/catalog.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 
 const app = express();
 
@@ -99,6 +100,7 @@ app.use('/api/pets', petsRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/medical', medicalRoutes);
 app.use('/api/catalog', catalogRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/', (_req, res) => {
   res.json({
