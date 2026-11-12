@@ -3,16 +3,21 @@ import { Plus, Edit2, Trash2, PawPrint } from 'lucide-react';
 import PetAvatar from '../components/PetAvatar';
 import PetFormModal from '../components/PetFormModal';
 import PetDetailModal from '../components/PetDetailModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { usePetStore, type Pet } from '../store/usePetStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useToastStore } from '../store/useToastStore';
 
 export default function Mascotas() {
   const user = useAuthStore((state) => state.user);
   const { pets, cargarDatos, eliminarMascota } = usePetStore();
+  const mostrarToast = useToastStore((state) => state.mostrarToast);
 
   const [modalFormAbierto, setModalFormAbierto] = useState(false);
   const [mascotaEditar, setMascotaEditar] = useState<Pet | null>(null);
   const [mascotaDetalleId, setMascotaDetalleId] = useState<string | null>(null);
+  const [mascotaConfirmarEliminar, setMascotaConfirmarEliminar] = useState<Pet | null>(null);
+  const [eliminando, setEliminando] = useState(false);
 
   useEffect(() => {
     cargarDatos(user?.id);
@@ -26,6 +31,16 @@ export default function Mascotas() {
   const abrirEditar = (pet: Pet) => {
     setMascotaEditar(pet);
     setModalFormAbierto(true);
+  };
+
+  const handleConfirmarEliminarMascota = async () => {
+    if (!mascotaConfirmarEliminar) return;
+    setEliminando(true);
+    const nombre = mascotaConfirmarEliminar.name;
+    await eliminarMascota(mascotaConfirmarEliminar._id, user?.id);
+    setEliminando(false);
+    setMascotaConfirmarEliminar(null);
+    mostrarToast(`Se eliminó el perfil de ${nombre}.`, 'info');
   };
 
   return (
@@ -107,7 +122,7 @@ export default function Mascotas() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    eliminarMascota(pet._id, user?.id);
+                    setMascotaConfirmarEliminar(pet);
                   }}
                   className="p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                   title="Eliminar mascota"
@@ -132,6 +147,25 @@ export default function Mascotas() {
         abierto={modalFormAbierto}
         onCerrar={() => setModalFormAbierto(false)}
         mascotaEditar={mascotaEditar}
+      />
+
+      {/* Confirmación destructiva antes de eliminar mascota */}
+      <ConfirmDialog
+        abierto={Boolean(mascotaConfirmarEliminar)}
+        titulo={
+          mascotaConfirmarEliminar
+            ? `¿Eliminar a ${mascotaConfirmarEliminar.name}?`
+            : '¿Eliminar mascota?'
+        }
+        mensaje={
+          mascotaConfirmarEliminar
+            ? `¿Eliminar a ${mascotaConfirmarEliminar.name}? Se borrarán también sus tareas e historial médico`
+            : 'Se borrarán también sus tareas e historial médico.'
+        }
+        detalle="Esta acción no se puede deshacer."
+        procesando={eliminando}
+        onConfirmar={handleConfirmarEliminarMascota}
+        onCancelar={() => setMascotaConfirmarEliminar(null)}
       />
     </div>
   );

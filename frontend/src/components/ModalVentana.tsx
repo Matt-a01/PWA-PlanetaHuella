@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalVentanaProps {
@@ -20,13 +20,36 @@ export default function ModalVentana({
   maxWidthClass = 'max-w-md',
   children,
 }: ModalVentanaProps) {
+  const tituloId = useId();
+  const subtituloId = useId();
+  const contenedorRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     if (!abierto) return;
+
+    const overflowPrevio = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const manejarEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCerrar();
     };
     window.addEventListener('keydown', manejarEscape);
-    return () => window.removeEventListener('keydown', manejarEscape);
+
+    // Enfoca automáticamente el contenedor del diálogo si el foco no está ya dentro de él
+    const timer = window.setTimeout(() => {
+      if (
+        contenedorRef.current &&
+        !contenedorRef.current.contains(document.activeElement)
+      ) {
+        contenedorRef.current.focus();
+      }
+    }, 10);
+
+    return () => {
+      window.clearTimeout(timer);
+      document.body.style.overflow = overflowPrevio;
+      window.removeEventListener('keydown', manejarEscape);
+    };
   }, [abierto, onCerrar]);
 
   if (!abierto) return null;
@@ -37,7 +60,13 @@ export default function ModalVentana({
       onClick={onCerrar}
     >
       <div
-        className={`w-full ${maxWidthClass} bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden flex flex-col max-h-[88vh]`}
+        ref={contenedorRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={tituloId}
+        aria-describedby={subtitulo ? subtituloId : undefined}
+        tabIndex={-1}
+        className={`w-full ${maxWidthClass} bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden flex flex-col max-h-[88vh] focus:outline-none`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 pt-5 pb-3.5 border-b border-gray-100 flex items-start justify-between gap-3 bg-gradient-to-b from-green-50/60 to-white">
@@ -47,8 +76,14 @@ export default function ModalVentana({
                 {badge}
               </span>
             )}
-            <h2 className="text-lg font-bold text-gray-900 leading-snug">{titulo}</h2>
-            {subtitulo && <p className="text-xs text-gray-500 mt-0.5">{subtitulo}</p>}
+            <h2 id={tituloId} className="text-lg font-bold text-gray-900 leading-snug">
+              {titulo}
+            </h2>
+            {subtitulo && (
+              <p id={subtituloId} className="text-xs text-gray-500 mt-0.5">
+                {subtitulo}
+              </p>
+            )}
           </div>
           <button
             type="button"

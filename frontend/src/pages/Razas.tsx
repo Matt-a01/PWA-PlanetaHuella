@@ -12,9 +12,11 @@ import {
 } from 'lucide-react';
 import PetAvatar from '../components/PetAvatar';
 import ModalVentana from '../components/ModalVentana';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { comprimirImagenMultimedia } from '../utils/imageUtils';
 import { usePetStore, type BreedItem } from '../store/usePetStore';
 import { useAuthStore, esUsuarioAdmin } from '../store/useAuthStore';
+import { useToastStore } from '../store/useToastStore';
 
 export default function Razas() {
   const { user, sincronizarRolDesdeBD } = useAuthStore();
@@ -25,11 +27,14 @@ export default function Razas() {
     actualizarRazaCatalogo,
     eliminarRazaCatalogo,
   } = usePetStore();
+  const mostrarToast = useToastStore((state) => state.mostrarToast);
   const esAdmin = esUsuarioAdmin(user);
 
   const [categoria, setCategoria] = useState<'Perros' | 'Gatos' | 'Otros'>('Perros');
   const [busqueda, setBusqueda] = useState('');
   const [razaDetalle, setRazaDetalle] = useState<BreedItem | null>(null);
+  const [razaConfirmarEliminar, setRazaConfirmarEliminar] = useState<BreedItem | null>(null);
+  const [eliminandoRaza, setEliminandoRaza] = useState(false);
 
   // Estado de la ventana flotante de Administrador con selector multimedia (sin URL manual)
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -148,15 +153,24 @@ export default function Razas() {
           : ['Dar alimento adecuado', 'Agua fresca', 'Cuidado diario'],
     };
 
-    if (razaEditando) {
-      await actualizarRazaCatalogo(razaEditando._id, payload);
-    } else {
-      await agregarRazaCatalogo(payload);
-      setCategoria(catForm);
+    try {
+      if (razaEditando) {
+        await actualizarRazaCatalogo(razaEditando._id, payload);
+        mostrarToast(`Raza «${payload.name}» actualizada en el catálogo.`, 'success');
+      } else {
+        await agregarRazaCatalogo(payload);
+        setCategoria(catForm);
+        mostrarToast(`Raza «${payload.name}» agregada al catálogo global.`, 'success');
+      }
+      setModalAdminAbierto(false);
+    } catch (err) {
+      mostrarToast(
+        err instanceof Error ? err.message : 'No se pudo guardar la raza en el catálogo.',
+        'error'
+      );
+    } finally {
+      setGuardando(false);
     }
-
-    setGuardando(false);
-    setModalAdminAbierto(false);
   };
 
   return (
@@ -240,7 +254,7 @@ export default function Razas() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    eliminarRazaCatalogo(item._id);
+                    setRazaConfirmarEliminar(item);
                   }}
                   className="bg-white/95 p-1.5 rounded-full shadow-sm text-red-500 hover:bg-red-50 cursor-pointer"
                   title="Eliminar del catálogo (Admin)"
@@ -491,6 +505,36 @@ export default function Razas() {
           </button>
         </form>
       </ModalVentana>
+
+      <ConfirmDialog
+        abierto={Boolean(razaConfirmarEliminar)}
+        titulo="¿Eliminar raza del catálogo?"
+        mensaje={
+          razaConfirmarEliminar
+            ? `¿Eliminar «${razaConfirmarEliminar.name}» del catálogo global?`
+            : '¿Eliminar esta raza del catálogo global?'
+        }
+        detalle="El elemento dejará de aparecer en el catálogo público."
+        procesando={eliminandoRaza}
+        onConfirmar={async () => {
+          if (!razaConfirmarEliminar) return;
+          setEliminandoRaza(true);
+          try {
+            const nombre = razaConfirmarEliminar.name;
+            await eliminarRazaCatalogo(razaConfirmarEliminar._id);
+            setRazaConfirmarEliminar(null);
+            mostrarToast(`Se eliminó «${nombre}» del catálogo global.`, 'info');
+          } catch (err) {
+            mostrarToast(
+              err instanceof Error ? err.message : 'No se pudo eliminar la raza del catálogo.',
+              'error'
+            );
+          } finally {
+            setEliminandoRaza(false);
+          }
+        }}
+        onCancelar={() => setRazaConfirmarEliminar(null)}
+      />
     </div>
   );
 }

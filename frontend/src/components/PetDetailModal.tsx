@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Edit2,
   Plus,
@@ -7,14 +8,22 @@ import {
   CheckCircle2,
   Activity,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import ModalVentana from './ModalVentana';
 import PetAvatar from './PetAvatar';
 import PetFormModal from './PetFormModal';
 import TaskFormModal from './TaskFormModal';
 import MedicalRecordModal from './MedicalRecordModal';
-import { usePetStore, type Pet } from '../store/usePetStore';
+import ConfirmDialog from './ConfirmDialog';
+import {
+  usePetStore,
+  type Pet,
+  type Task,
+  type MedicalRecordItem,
+} from '../store/usePetStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useToastStore } from '../store/useToastStore';
 
 interface PetDetailModalProps {
   abierto: boolean;
@@ -37,11 +46,15 @@ export default function PetDetailModal({
     cargarRegistrosMedicos,
     eliminarRegistroMedico,
   } = usePetStore();
+  const mostrarToast = useToastStore((state) => state.mostrarToast);
 
   const [tab, setTab] = useState<'cuidados' | 'salud'>('cuidados');
   const [modalEditarMascota, setModalEditarMascota] = useState(false);
   const [modalNuevaTarea, setModalNuevaTarea] = useState(false);
   const [modalNuevoRegistro, setModalNuevoRegistro] = useState(false);
+  const [tareaConfirmarEliminar, setTareaConfirmarEliminar] = useState<Task | null>(null);
+  const [registroConfirmarEliminar, setRegistroConfirmarEliminar] =
+    useState<MedicalRecordItem | null>(null);
 
   const mascota: Pet | null = pets.find((p) => p._id === mascotaId) || null;
 
@@ -95,14 +108,24 @@ export default function PetDetailModal({
                   Sin indicaciones especiales registradas aún.
                 </p>
               )}
-              <button
-                type="button"
-                onClick={() => setModalEditarMascota(true)}
-                className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-800 bg-white border border-green-200 px-3 py-1 rounded-full transition-colors cursor-pointer"
-              >
-                <Edit2 size={12} />
-                <span>Editar datos o foto</span>
-              </button>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalEditarMascota(true)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-800 bg-white border border-green-200 px-3 py-1 rounded-full transition-colors cursor-pointer"
+                >
+                  <Edit2 size={12} />
+                  <span>Editar datos o foto</span>
+                </button>
+                <Link
+                  to={`/mascota/${mascota._id}`}
+                  onClick={onCerrar}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-green-800 hover:text-green-900 bg-green-100/80 hover:bg-green-100 border border-green-200 px-3 py-1 rounded-full transition-colors"
+                >
+                  <ExternalLink size={12} />
+                  <span>Abrir ficha en pantalla completa</span>
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -182,7 +205,7 @@ export default function PetDetailModal({
                       </label>
                       <button
                         type="button"
-                        onClick={() => eliminarTarea(t._id, user?.id)}
+                        onClick={() => setTareaConfirmarEliminar(t)}
                         className="text-gray-400 hover:text-red-500 p-1 cursor-pointer"
                         title="Quitar tarea"
                       >
@@ -253,7 +276,7 @@ export default function PetDetailModal({
                         </div>
                         <button
                           type="button"
-                          onClick={() => eliminarRegistroMedico(mascota._id, rec._id)}
+                          onClick={() => setRegistroConfirmarEliminar(rec)}
                           className="text-gray-400 hover:text-red-500 p-1 cursor-pointer"
                           title="Eliminar registro"
                         >
@@ -286,6 +309,42 @@ export default function PetDetailModal({
         abierto={modalNuevoRegistro}
         onCerrar={() => setModalNuevoRegistro(false)}
         mascota={mascota}
+      />
+
+      <ConfirmDialog
+        abierto={Boolean(tareaConfirmarEliminar)}
+        titulo="¿Eliminar tarea?"
+        mensaje={
+          tareaConfirmarEliminar
+            ? `¿Eliminar la tarea «${tareaConfirmarEliminar.title}» de ${mascota.name}?`
+            : '¿Eliminar esta tarea?'
+        }
+        onConfirmar={async () => {
+          if (!tareaConfirmarEliminar) return;
+          const titulo = tareaConfirmarEliminar.title;
+          await eliminarTarea(tareaConfirmarEliminar._id, user?.id);
+          setTareaConfirmarEliminar(null);
+          mostrarToast(`Tarea «${titulo}» eliminada.`, 'info');
+        }}
+        onCancelar={() => setTareaConfirmarEliminar(null)}
+      />
+
+      <ConfirmDialog
+        abierto={Boolean(registroConfirmarEliminar)}
+        titulo="¿Eliminar registro médico?"
+        mensaje={
+          registroConfirmarEliminar
+            ? `¿Eliminar el control «${registroConfirmarEliminar.type}» del historial de ${mascota.name}?`
+            : '¿Eliminar este registro médico?'
+        }
+        onConfirmar={async () => {
+          if (!registroConfirmarEliminar) return;
+          const tipo = registroConfirmarEliminar.type;
+          await eliminarRegistroMedico(mascota._id, registroConfirmarEliminar._id);
+          setRegistroConfirmarEliminar(null);
+          mostrarToast(`Registro médico «${tipo}» eliminado.`, 'info');
+        }}
+        onCancelar={() => setRegistroConfirmarEliminar(null)}
       />
     </>
   );

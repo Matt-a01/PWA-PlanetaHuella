@@ -15,8 +15,10 @@ import {
 import PetAvatar from '../components/PetAvatar';
 import ModalVentana from '../components/ModalVentana';
 import PetFormModal from '../components/PetFormModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { usePetStore, type Pet, type TipItem } from '../store/usePetStore';
 import { useAuthStore, esUsuarioAdmin } from '../store/useAuthStore';
+import { useToastStore } from '../store/useToastStore';
 
 export default function Recomendaciones() {
   const { user, sincronizarRolDesdeBD } = useAuthStore();
@@ -31,12 +33,15 @@ export default function Recomendaciones() {
     actualizarTipCatalogo,
     eliminarTipCatalogo,
   } = usePetStore();
+  const mostrarToast = useToastStore((state) => state.mostrarToast);
   const esAdmin = esUsuarioAdmin(user);
 
   const [mascotaVentana, setMascotaVentana] = useState<Pet | null>(null);
   const [mascotaEditarIndicaciones, setMascotaEditarIndicaciones] = useState<Pet | null>(null);
   const [filtroEspecie, setFiltroEspecie] = useState<string>('Todos');
   const [tipExpandido, setTipExpandido] = useState<string | null>(null);
+  const [tipConfirmarEliminar, setTipConfirmarEliminar] = useState<TipItem | null>(null);
+  const [eliminandoTip, setEliminandoTip] = useState(false);
 
   // Estado de la ventana flotante de Administrador para agregar o editar Tips
   const [modalTipAdmin, setModalTipAdmin] = useState(false);
@@ -162,14 +167,23 @@ export default function Recomendaciones() {
       iconType: iconoTip,
     };
 
-    if (tipEditando) {
-      await actualizarTipCatalogo(tipEditando._id, payload);
-    } else {
-      await agregarTipCatalogo(payload);
+    try {
+      if (tipEditando) {
+        await actualizarTipCatalogo(tipEditando._id, payload);
+        mostrarToast(`Recomendación «${payload.title}» actualizada.`, 'success');
+      } else {
+        await agregarTipCatalogo(payload);
+        mostrarToast(`Recomendación «${payload.title}» publicada en el catálogo.`, 'success');
+      }
+      setModalTipAdmin(false);
+    } catch (err) {
+      mostrarToast(
+        err instanceof Error ? err.message : 'No se pudo guardar la recomendación.',
+        'error'
+      );
+    } finally {
+      setGuardandoTip(false);
     }
-
-    setGuardandoTip(false);
-    setModalTipAdmin(false);
   };
 
   return (
@@ -312,7 +326,7 @@ export default function Recomendaciones() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            eliminarTipCatalogo(tip._id);
+                            setTipConfirmarEliminar(tip);
                           }}
                           className="p-2 text-gray-400 hover:text-red-500 cursor-pointer"
                           title="Eliminar recomendación (Admin)"
@@ -560,6 +574,36 @@ export default function Recomendaciones() {
           </button>
         </form>
       </ModalVentana>
+
+      <ConfirmDialog
+        abierto={Boolean(tipConfirmarEliminar)}
+        titulo="¿Eliminar recomendación?"
+        mensaje={
+          tipConfirmarEliminar
+            ? `¿Eliminar la recomendación «${tipConfirmarEliminar.title}» del catálogo global?`
+            : '¿Eliminar esta recomendación del catálogo global?'
+        }
+        detalle="El consejo dejará de mostrarse para todos los usuarios."
+        procesando={eliminandoTip}
+        onConfirmar={async () => {
+          if (!tipConfirmarEliminar) return;
+          setEliminandoTip(true);
+          try {
+            const titulo = tipConfirmarEliminar.title;
+            await eliminarTipCatalogo(tipConfirmarEliminar._id);
+            setTipConfirmarEliminar(null);
+            mostrarToast(`Recomendación «${titulo}» eliminada del catálogo.`, 'info');
+          } catch (err) {
+            mostrarToast(
+              err instanceof Error ? err.message : 'No se pudo eliminar la recomendación.',
+              'error'
+            );
+          } finally {
+            setEliminandoTip(false);
+          }
+        }}
+        onCancelar={() => setTipConfirmarEliminar(null)}
+      />
     </div>
   );
 }
