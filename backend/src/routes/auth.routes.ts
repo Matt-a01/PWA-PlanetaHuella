@@ -30,10 +30,7 @@ import {
   TIEMPO_EXPIRACION_OTP_MS,
   MAX_INTENTOS_OTP,
 } from '../services/email.service.js';
-import {
-  verificarTokenGoogle,
-  verificarTokenApple,
-} from '../services/oauth.service.js';
+import { verificarTokenGoogle } from '../services/oauth.service.js';
 
 const router = express.Router();
 
@@ -485,27 +482,20 @@ router.post(
   }
 );
 
-// POST /api/auth/oauth - Inicio de sesión y registro con cuenta de Google o Apple
+// POST /api/auth/oauth - Inicio de sesión y registro con cuenta de Google
 router.post(
   '/oauth',
   authLimiter,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { provider, idToken, accessToken, email, fullName } = oauthLoginSchema.parse(req.body);
+      const { idToken, accessToken, email, fullName } = oauthLoginSchema.parse(req.body);
 
-      const perfil =
-        provider === 'google'
-          ? await verificarTokenGoogle({
-              idToken,
-              accessToken,
-              emailFallback: email,
-              fullNameFallback: fullName,
-            })
-          : await verificarTokenApple({
-              idToken,
-              emailFallback: email,
-              fullNameFallback: fullName,
-            });
+      const perfil = await verificarTokenGoogle({
+        idToken,
+        accessToken,
+        emailFallback: email,
+        fullNameFallback: fullName,
+      });
 
       let user = await User.findOne({ email: perfil.email });
 
@@ -520,17 +510,13 @@ router.post(
           password: hashedPassword,
           role: 'user',
           roles: ['user'],
-          authProvider: perfil.provider,
-          googleId: perfil.provider === 'google' ? perfil.providerUserId : null,
-          appleId: perfil.provider === 'apple' ? perfil.providerUserId : null,
+          authProvider: 'google',
+          googleId: perfil.providerUserId,
           emailVerified: true,
         });
       } else {
-        if (perfil.provider === 'google' && !user.googleId) {
+        if (!user.googleId) {
           user.googleId = perfil.providerUserId;
-        }
-        if (perfil.provider === 'apple' && !user.appleId) {
-          user.appleId = perfil.providerUserId;
         }
         user.emailVerified = true;
         user.verificationCodeHash = null;
@@ -543,9 +529,7 @@ router.post(
 
       res.status(200).json({
         ok: true,
-        message: `¡Sesión iniciada con ${
-          perfil.provider === 'google' ? 'Google' : 'Apple'
-        }!`,
+        message: '¡Sesión iniciada con Google!',
         user: serializarUsuario(user),
         token,
       });

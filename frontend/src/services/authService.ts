@@ -6,7 +6,7 @@ export interface AuthUserDTO {
   email: string;
   role?: 'user' | 'admin';
   roles?: string[];
-  authProvider?: 'local' | 'google' | 'apple';
+  authProvider?: 'local' | 'google';
   emailVerified?: boolean;
   createdAt?: string;
 }
@@ -28,7 +28,7 @@ export interface AuthResponse {
 }
 
 export interface OAuthLoginPayload {
-  provider: 'google' | 'apple';
+  provider: 'google';
   idToken?: string;
   accessToken?: string;
   email?: string;
@@ -128,7 +128,7 @@ export const resetPasswordWithCode = async (
   }
 };
 
-// Autentica o registra al usuario mediante Google o Apple OAuth
+// Autentica o registra al usuario mediante Google OAuth
 export const oauthLogin = async (payload: OAuthLoginPayload): Promise<AuthResponse> => {
   try {
     return await apiPost<AuthResponse>('/auth/oauth', payload);

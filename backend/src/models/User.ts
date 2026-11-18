@@ -10,14 +10,13 @@ const userSchema = new mongoose.Schema(
     // Permite también agregar un segundo rol en un arreglo ['user', 'admin'] desde la base de datos
     roles: { type: [String], default: ['user'] },
 
-    // Proveedor de autenticación ('local', 'google' o 'apple')
+    // Proveedor de autenticación ('local' o 'google')
     authProvider: {
       type: String,
-      enum: ['local', 'google', 'apple'],
+      enum: ['local', 'google'],
       default: 'local',
     },
     googleId: { type: String, default: null },
-    appleId: { type: String, default: null },
 
     // Verificación de correo electrónico mediante código OTP de 6 dígitos (HMAC-SHA256)
     emailVerified: { type: Boolean, default: false },

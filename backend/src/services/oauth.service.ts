@@ -1,9 +1,8 @@
 import crypto from 'node:crypto';
-import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 
 export interface PerfilOAuthVerificado {
-  provider: 'google' | 'apple';
+  provider: 'google';
   providerUserId: string;
   email: string;
   fullName: string;
@@ -24,15 +23,6 @@ interface GoogleUserInfoResponse {
   email_verified?: boolean;
   name?: string;
   given_name?: string;
-}
-
-type ClaveJwkApple = crypto.JsonWebKeyInput['key'] & {
-  kid?: string;
-  alg?: string;
-};
-
-interface AppleJwksResponse {
-  keys?: ClaveJwkApple[];
 }
 
 // Verifica un idToken o accessToken emitido por Google Identity Services
@@ -112,87 +102,5 @@ export const verificarTokenGoogle = async (opciones: {
     providerUserId: `google_${idDeterminista}`,
     email: emailLimpio,
     fullName: (opciones.fullNameFallback || emailLimpio.split('@')[0] || 'Usuario Google').trim(),
-  };
-};
-
-// Verifica un idToken firmado por Apple (https://appleid.apple.com/auth/keys)
-export const verificarTokenApple = async (opciones: {
-  idToken?: string | undefined;
-  emailFallback?: string | undefined;
-  fullNameFallback?: string | undefined;
-}): Promise<PerfilOAuthVerificado> => {
-  if (opciones.idToken) {
-    const decodificadoCompleto = jwt.decode(opciones.idToken, { complete: true });
-    if (
-      !decodificadoCompleto ||
-      typeof decodificadoCompleto !== 'object' ||
-      !decodificadoCompleto.header?.kid
-    ) {
-      throw new Error('El token de Apple ID no tiene un formato JWT válido.');
-    }
-
-    const resJwks = await fetch('https://appleid.apple.com/auth/keys');
-    if (!resJwks.ok) {
-      throw new Error('No se pudieron obtener las llaves públicas de Apple ID.');
-    }
-
-    const jwks = (await resJwks.json()) as AppleJwksResponse;
-    const llaveApple = jwks.keys?.find((k) => k.kid === decodificadoCompleto.header.kid);
-
-    if (!llaveApple) {
-      throw new Error('No se encontró la clave pública de Apple correspondiente al token.');
-    }
-
-    const publicKey = crypto.createPublicKey({
-      key: llaveApple,
-      format: 'jwk',
-    });
-
-    const payloadVerificado = jwt.verify(opciones.idToken, publicKey, {
-      algorithms: ['RS256'],
-      issuer: 'https://appleid.apple.com',
-      ...(env.APPLE_CLIENT_ID ? { audience: env.APPLE_CLIENT_ID } : {}),
-    }) as jwt.JwtPayload;
-
-    const emailApple =
-      (typeof payloadVerificado.email === 'string' && payloadVerificado.email) ||
-      opciones.emailFallback;
-
-    if (!emailApple || !payloadVerificado.sub) {
-      throw new Error('Apple ID no proporcionó un correo electrónico válido.');
-    }
-
-    return {
-      provider: 'apple',
-      providerUserId: String(payloadVerificado.sub),
-      email: emailApple.trim().toLowerCase(),
-      fullName: (
-        opciones.fullNameFallback ||
-        emailApple.split('@')[0] ||
-        'Usuario de Apple'
-      ).trim(),
-    };
-  }
-
-  if (env.APPLE_CLIENT_ID) {
-    throw new Error('Se requiere el token oficial de Sign in with Apple.');
-  }
-
-  if (!opciones.emailFallback) {
-    throw new Error('Ingresa el correo de tu Apple ID para continuar.');
-  }
-
-  const emailLimpio = opciones.emailFallback.trim().toLowerCase();
-  const idDeterminista = crypto
-    .createHash('sha256')
-    .update(`apple:${emailLimpio}`)
-    .digest('hex')
-    .slice(0, 24);
-
-  return {
-    provider: 'apple',
-    providerUserId: `apple_${idDeterminista}`,
-    email: emailLimpio,
-    fullName: (opciones.fullNameFallback || emailLimpio.split('@')[0] || 'Usuario Apple').trim(),
   };
 };

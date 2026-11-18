@@ -53,7 +53,6 @@ const envSchema = z.object({
   RESEND_API_KEY: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
   BREVO_API_KEY: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
   GOOGLE_CLIENT_ID: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
-  APPLE_CLIENT_ID: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

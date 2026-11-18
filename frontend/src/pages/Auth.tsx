@@ -61,20 +61,6 @@ declare global {
         };
       };
     };
-    AppleID?: {
-      auth: {
-        init: (config: {
-          clientId: string;
-          scope: string;
-          redirectURI: string;
-          usePopup: boolean;
-        }) => void;
-        signIn: () => Promise<{
-          authorization?: { id_token?: string };
-          user?: { name?: { firstName?: string; lastName?: string }; email?: string };
-        }>;
-      };
-    };
   }
 }
 
@@ -137,8 +123,8 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
   const [devEmailHtml, setDevEmailHtml] = useState<string | null>(null);
   const [modalCorreoAbierto, setModalCorreoAbierto] = useState(false);
 
-  // Modal de inicio de sesión social (Google / Apple)
-  const [proveedorModal, setProveedorModal] = useState<'google' | 'apple' | null>(null);
+  // Modal de inicio de sesión social (Google)
+  const [modalGoogleAbierto, setModalGoogleAbierto] = useState(false);
   const [oauthEmail, setOauthEmail] = useState('');
   const [oauthNombre, setOauthNombre] = useState('');
 
@@ -414,7 +400,7 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
     }
   };
 
-  // ==================== INICIO DE SESIÓN CON GOOGLE Y APPLE ====================
+  // ==================== INICIO DE SESIÓN CON GOOGLE ====================
 
   const iniciarOAuthConGoogle = async () => {
     limpiarMensajes();
@@ -425,7 +411,7 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
     if (!googleClientId) {
       setOauthEmail(email);
       setOauthNombre(fullName);
-      setProveedorModal('google');
+      setModalGoogleAbierto(true);
       return;
     }
 
@@ -482,109 +468,34 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
     }
   };
 
-  const iniciarOAuthConApple = async () => {
-    limpiarMensajes();
-    const appleClientId = (
-      (import.meta.env.VITE_APPLE_CLIENT_ID as string | undefined) ?? ''
-    ).trim();
-
-    if (!appleClientId) {
-      setOauthEmail(email);
-      setOauthNombre(fullName);
-      setProveedorModal('apple');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await cargarScriptExterno(
-        'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js',
-        'apple-auth-sdk'
-      );
-
-      if (!window.AppleID?.auth) {
-        throw new Error('El SDK de Sign in with Apple no está disponible.');
-      }
-
-      const redirectURI =
-        ((import.meta.env.VITE_APPLE_REDIRECT_URI as string | undefined) ?? '').trim() ||
-        window.location.origin;
-
-      window.AppleID.auth.init({
-        clientId: appleClientId,
-        scope: 'name email',
-        redirectURI,
-        usePopup: true,
-      });
-
-      const appleRes = await window.AppleID.auth.signIn();
-      const idToken = appleRes.authorization?.id_token;
-      if (!idToken) {
-        throw new Error('Apple no devolvió un token de identidad.');
-      }
-
-      const nombreApple = [
-        appleRes.user?.name?.firstName,
-        appleRes.user?.name?.lastName,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-
-      const res = await oauthLogin({
-        provider: 'apple',
-        idToken,
-        email: appleRes.user?.email,
-        fullName: nombreApple || undefined,
-      });
-
-      if (res.ok && res.user && res.token) {
-        setSuccessMessage('¡Conectado con tu Apple ID!');
-        setAuth(res.user, res.token);
-        setTimeout(() => navigate('/inicio', { replace: true }), 350);
-      } else {
-        setErrorMessage(res.error || 'No se pudo autenticar con Apple.');
-      }
-    } catch (err) {
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Se canceló el inicio de sesión con Apple.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const confirmarModalOAuthAsistido = async (e: FormEvent) => {
     e.preventDefault();
-    if (!proveedorModal) return;
 
     const correoLimpio = oauthEmail.trim().toLowerCase();
     if (!correoLimpio || !correoLimpio.includes('@')) {
-      setErrorMessage('Ingresa un correo electrónico válido de tu cuenta.');
+      setErrorMessage('Ingresa un correo electrónico válido de tu cuenta de Google.');
       return;
     }
 
     setLoading(true);
     try {
       const res = await oauthLogin({
-        provider: proveedorModal,
+        provider: 'google',
         email: correoLimpio,
         fullName: oauthNombre.trim() || undefined,
       });
 
       if (res.ok && res.user && res.token) {
-        setProveedorModal(null);
-        setSuccessMessage(
-          `¡Sesión iniciada con ${proveedorModal === 'google' ? 'Google' : 'Apple'}!`
-        );
+        setModalGoogleAbierto(false);
+        setSuccessMessage('¡Sesión iniciada con Google!');
         setAuth(res.user, res.token);
         setTimeout(() => navigate('/inicio', { replace: true }), 350);
       } else {
-        setErrorMessage(res.error || 'No se pudo iniciar sesión con el proveedor.');
+        setErrorMessage(res.error || 'No se pudo iniciar sesión con Google.');
       }
     } catch (err) {
       setErrorMessage(
-        err instanceof Error ? err.message : 'Error al vincular la cuenta social.'
+        err instanceof Error ? err.message : 'Error al vincular la cuenta de Google.'
       );
     } finally {
       setLoading(false);
@@ -795,7 +706,7 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
                 </button>
               </form>
 
-              {/* Botones OAuth: Google y Apple */}
+              {/* Botón OAuth: Google */}
               <div className="mt-5">
                 <div className="relative flex py-2 items-center">
                   <div className="flex-grow border-t border-gray-100"></div>
@@ -805,12 +716,12 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
                   <div className="flex-grow border-t border-gray-100"></div>
                 </div>
 
-                <div className="flex gap-3 mt-2">
+                <div className="mt-2">
                   <button
                     type="button"
                     disabled={loading}
                     onClick={() => void iniciarOAuthConGoogle()}
-                    className="flex-1 py-2.5 px-4 border border-gray-200 hover:border-green-300 hover:bg-green-50/40 rounded-xl text-xs font-semibold text-gray-700 bg-white flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs disabled:opacity-60"
+                    className="w-full py-2.5 px-4 border border-gray-200 hover:border-green-300 hover:bg-green-50/40 rounded-xl text-xs font-semibold text-gray-700 bg-white flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs disabled:opacity-60"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
                       <path
@@ -818,23 +729,7 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
                         d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.8-5.5 3.8-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 3.4 14.6 2.5 12 2.5 6.8 2.5 2.5 6.8 2.5 12s4.3 9.5 9.5 9.5c5.5 0 9.1-3.9 9.1-9.3 0-.6-.1-1.1-.2-1.6H12z"
                       />
                     </svg>
-                    <span>Google</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => void iniciarOAuthConApple()}
-                    className="flex-1 py-2.5 px-4 border border-gray-900 hover:bg-gray-800 rounded-xl text-xs font-semibold text-white bg-gray-900 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs disabled:opacity-60"
-                  >
-                    <svg
-                      className="w-4 h-4 fill-current"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.67.91-1.377 0-2.332-1.26-3.428-2.8-1.287-1.82-2.323-4.63-2.323-7.28 0-4.28 2.797-6.55 5.552-6.55 1.448 0 2.675.95 3.6.95.865 0 2.222-1.01 3.902-1.01.613 0 2.886.06 4.374 2.19-.13.09-2.383 1.37-2.383 4.19 0 3.26 2.854 4.42 2.955 4.45z" />
-                    </svg>
-                    <span>Apple</span>
+                    <span>Continuar con Google</span>
                   </button>
                 </div>
               </div>
@@ -1146,32 +1041,24 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
         </div>
       </div>
 
-      {/* Modal para inicio de sesión con cuenta Google / Apple cuando no hay CLIENT_ID configurado en .env */}
+      {/* Modal para inicio de sesión con cuenta Google cuando no hay VITE_GOOGLE_CLIENT_ID configurado en .env */}
       <ModalVentana
-        abierto={proveedorModal !== null}
-        onCerrar={() => setProveedorModal(null)}
-        titulo={
-          proveedorModal === 'google'
-            ? 'Continuar con Google'
-            : 'Continuar con Apple ID'
-        }
-        subtitulo="Selecciona o ingresa la cuenta que deseas vincular a Planeta Huella"
+        abierto={modalGoogleAbierto}
+        onCerrar={() => setModalGoogleAbierto(false)}
+        titulo="Continuar con Google"
+        subtitulo="Selecciona o ingresa la cuenta de Google que deseas vincular a Planeta Huella"
       >
         <form onSubmit={confirmarModalOAuthAsistido} className="space-y-3.5">
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">
-              Correo de tu cuenta {proveedorModal === 'google' ? 'Google' : 'Apple'}
+              Correo de tu cuenta Google
             </label>
             <input
               type="email"
               required
               value={oauthEmail}
               onChange={(e) => setOauthEmail(e.target.value)}
-              placeholder={
-                proveedorModal === 'google'
-                  ? 'tucorreo@gmail.com'
-                  : 'tucorreo@icloud.com'
-              }
+              placeholder="tucorreo@gmail.com"
               className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-green-600 focus:bg-white"
             />
           </div>
@@ -1192,7 +1079,7 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
           <div className="flex gap-2.5 pt-2">
             <button
               type="button"
-              onClick={() => setProveedorModal(null)}
+              onClick={() => setModalGoogleAbierto(false)}
               className="flex-1 py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
             >
               Cancelar

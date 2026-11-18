@@ -123,8 +123,8 @@ export const resetPasswordSchema = z.object({
 });
 
 export const oauthLoginSchema = z.object({
-  provider: z.enum(['google', 'apple'], {
-    error: 'El proveedor debe ser google o apple.',
+  provider: z.enum(['google'], {
+    error: 'El proveedor de autenticación debe ser google.',
   }),
   idToken: z.string().trim().max(8192).optional(),
   accessToken: z.string().trim().max(4096).optional(),
