@@ -12,6 +12,15 @@ export interface ResultadoEnvioCorreo {
   subject: string;
 }
 
+class EmailServiceError extends Error {
+  status = 502;
+  expose = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'EmailServiceError';
+  }
+}
+
 // Genera un código numérico aleatorio de 6 dígitos criptográficamente seguro (CSPRNG)
 export const generarCodigoOTP = (): string => {
   return crypto.randomInt(100000, 1000000).toString();
@@ -245,8 +254,13 @@ const enviarPorBrevoAPI = async (
   if (!res.ok) {
     const detalle = await res.text().catch(() => '');
     console.error('❌ Error al enviar correo con Brevo API:', res.status, detalle);
-    throw new Error(
-      'No se pudo enviar el correo de verificación a través de Brevo. Verifica tu BREVO_API_KEY y que el correo remitente (EMAIL_FROM) esté verificado en Brevo.'
+    if (detalle.includes('authorised_ips')) {
+      throw new EmailServiceError(
+        'Brevo bloqueó la dirección IP del servidor (Render). Entra a https://app.brevo.com/security/authorised_ips y haz clic en "Deactivate blocking" para permitir conexiones desde cualquier IP.'
+      );
+    }
+    throw new EmailServiceError(
+      `No se pudo enviar el correo a través de Brevo (HTTP ${res.status}). Verifica que BREVO_API_KEY y EMAIL_FROM estén bien configurados en Render.`
     );
   }
 };
@@ -275,7 +289,7 @@ const enviarPorResendAPI = async (
   if (!res.ok) {
     const detalle = await res.text().catch(() => '');
     console.error('❌ Error al enviar correo con Resend API:', res.status, detalle);
-    throw new Error('No se pudo enviar el correo a través de Resend.');
+    throw new EmailServiceError('No se pudo enviar el correo a través de Resend.');
   }
 };
 
@@ -379,7 +393,9 @@ const enviarPorSmtpNativo = async (
   });
 
   if (!enviado) {
-    throw new Error('No se pudo enviar el correo mediante el servidor SMTP configurado.');
+    throw new EmailServiceError(
+      'No se pudo enviar el correo mediante el servidor SMTP configurado.'
+    );
   }
 };
 
@@ -403,8 +419,8 @@ const despacharCorreo = async (
     return { sent: true, provider: 'smtp', subject: asunto };
   }
 
-  throw new Error(
-    'El servicio de correo electrónico no está configurado en el servidor (configura BREVO_API_KEY, RESEND_API_KEY o SMTP en las variables de entorno).'
+  throw new EmailServiceError(
+    'Falta configurar BREVO_API_KEY y EMAIL_FROM en las variables de entorno (Environment) del servidor Backend en Render.'
   );
 };
 
