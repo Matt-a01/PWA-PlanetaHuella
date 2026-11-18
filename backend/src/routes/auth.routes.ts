@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -12,8 +13,27 @@ import { authLimiter } from '../middlewares/rateLimit.middleware.js';
 import {
   registerSchema,
   loginSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  oauthLoginSchema,
   objectIdSchema,
 } from '../schemas/validation.schemas.js';
+import {
+  generarCodigoOTP,
+  hashearCodigoOTP,
+  verificarCodigoOTP,
+  enviarCorreoVerificacion,
+  enviarCorreoRecuperacion,
+  enviarCorreoConfirmacionContrasena,
+  TIEMPO_EXPIRACION_OTP_MS,
+  MAX_INTENTOS_OTP,
+} from '../services/email.service.js';
+import {
+  verificarTokenGoogle,
+  verificarTokenApple,
+} from '../services/oauth.service.js';
 
 const router = express.Router();
 
@@ -23,7 +43,30 @@ const firmarToken = (userId: string, email: string, role: 'user' | 'admin'): str
     algorithm: 'HS256',
   });
 
-// POST /api/auth/register - Toda cuenta nueva se registra como 'user'; el rol 'admin' solo se otorga en BD
+const serializarUsuario = (user: {
+  _id: unknown;
+  fullName: string;
+  email: string;
+  role?: string | null;
+  roles?: string[] | null;
+  authProvider?: string | null;
+  emailVerified?: boolean | null;
+  createdAt?: Date | string | null;
+}) => {
+  const rolActual = obtenerRolUsuario(user);
+  return {
+    id: user._id,
+    fullName: user.fullName,
+    email: user.email,
+    role: rolActual,
+    roles: obtenerArregloRoles(user),
+    authProvider: user.authProvider || 'local',
+    emailVerified: Boolean(user.emailVerified ?? true),
+    createdAt: user.createdAt,
+  };
+};
+
+// POST /api/auth/register - Registra cuenta como 'user' y envía código OTP de 6 dígitos al correo
 router.post(
   '/register',
   authLimiter,
@@ -33,6 +76,37 @@ router.post(
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
+        // Si la cuenta ya existía pero nunca verificó su correo, permite reintentar registro y reenviar OTP
+        if (!existingUser.emailVerified && existingUser.verificationCodeHash) {
+          const salt = await bcrypt.genSalt(10);
+          existingUser.fullName = fullName;
+          existingUser.password = await bcrypt.hash(password, salt);
+
+          const codigoOtp = generarCodigoOTP();
+          existingUser.verificationCodeHash = hashearCodigoOTP(codigoOtp, email, 'verify');
+          existingUser.verificationCodeExpiresAt = new Date(Date.now() + TIEMPO_EXPIRACION_OTP_MS);
+          existingUser.verificationAttempts = 0;
+          await existingUser.save();
+
+          const envio = await enviarCorreoVerificacion(email, fullName, codigoOtp);
+
+          res.status(200).json({
+            ok: true,
+            requiresVerification: true,
+            email: existingUser.email,
+            message:
+              'Te hemos enviado un nuevo código de verificación de 6 dígitos a tu correo electrónico.',
+            emailDelivery: {
+              provider: envio.provider,
+              sent: envio.sent,
+            },
+            ...(envio.provider === 'simulation'
+              ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
+              : {}),
+          });
+          return;
+        }
+
         res.status(409).json({
           ok: false,
           error: 'Este correo electrónico ya está registrado. Por favor inicia sesión.',
@@ -43,28 +117,119 @@ router.post(
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
+      const codigoOtp = generarCodigoOTP();
+      const codigoHash = hashearCodigoOTP(codigoOtp, email, 'verify');
+      const expiraEn = new Date(Date.now() + TIEMPO_EXPIRACION_OTP_MS);
+
       const newUser = await User.create({
         fullName,
         email,
         password: hashedPassword,
         role: 'user',
         roles: ['user'],
+        authProvider: 'local',
+        emailVerified: false,
+        verificationCodeHash: codigoHash,
+        verificationCodeExpiresAt: expiraEn,
+        verificationAttempts: 0,
       });
 
-      const rolActual = obtenerRolUsuario(newUser);
-      const token = firmarToken(String(newUser._id), newUser.email, rolActual);
+      const envio = await enviarCorreoVerificacion(newUser.email, newUser.fullName, codigoOtp);
 
       res.status(201).json({
         ok: true,
-        message: '¡Usuario registrado exitosamente!',
-        user: {
-          id: newUser._id,
-          fullName: newUser.fullName,
-          email: newUser.email,
-          role: rolActual,
-          roles: obtenerArregloRoles(newUser),
-          createdAt: newUser.createdAt,
+        requiresVerification: true,
+        email: newUser.email,
+        message:
+          '¡Cuenta creada! Hemos enviado un código de verificación de 6 dígitos a tu correo electrónico.',
+        emailDelivery: {
+          provider: envio.provider,
+          sent: envio.sent,
         },
+        ...(envio.provider === 'simulation'
+          ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
+          : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/auth/verify-email - Verifica el código OTP de 6 dígitos y activa la sesión JWT
+router.post(
+  '/verify-email',
+  authLimiter,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { email, code } = verifyEmailSchema.parse(req.body);
+
+      const user = await User.findOne({ email });
+      if (!user) {
+        res.status(404).json({
+          ok: false,
+          error: 'No encontramos ninguna cuenta asociada a este correo electrónico.',
+        });
+        return;
+      }
+
+      if (user.emailVerified && !user.verificationCodeHash) {
+        const rolActual = obtenerRolUsuario(user);
+        const token = firmarToken(String(user._id), user.email, rolActual);
+        res.status(200).json({
+          ok: true,
+          message: 'Tu correo ya estaba verificado. ¡Bienvenido!',
+          user: serializarUsuario(user),
+          token,
+        });
+        return;
+      }
+
+      if ((user.verificationAttempts ?? 0) >= MAX_INTENTOS_OTP) {
+        res.status(429).json({
+          ok: false,
+          error:
+            'Has superado el límite de intentos para este código. Solicita el reenvío de un código nuevo.',
+        });
+        return;
+      }
+
+      if (
+        !user.verificationCodeExpiresAt ||
+        user.verificationCodeExpiresAt.getTime() < Date.now()
+      ) {
+        res.status(400).json({
+          ok: false,
+          error: 'El código de verificación ha expirado. Solicita uno nuevo.',
+        });
+        return;
+      }
+
+      const esValido = verificarCodigoOTP(code, email, 'verify', user.verificationCodeHash);
+      if (!esValido) {
+        user.verificationAttempts = (user.verificationAttempts ?? 0) + 1;
+        await user.save();
+        const restantes = Math.max(0, MAX_INTENTOS_OTP - user.verificationAttempts);
+        res.status(400).json({
+          ok: false,
+          error: `Código incorrecto. Te quedan ${restantes} intento(s).`,
+        });
+        return;
+      }
+
+      user.emailVerified = true;
+      user.verificationCodeHash = null;
+      user.verificationCodeExpiresAt = null;
+      user.verificationAttempts = 0;
+      await user.save();
+
+      const rolActual = obtenerRolUsuario(user);
+      const token = firmarToken(String(user._id), user.email, rolActual);
+
+      res.status(200).json({
+        ok: true,
+        message: '¡Correo electrónico verificado con éxito! Bienvenido a Planeta Huella.',
+        user: serializarUsuario(user),
         token,
       });
     } catch (error) {
@@ -73,7 +238,59 @@ router.post(
   }
 );
 
-// POST /api/auth/login - Autentica al usuario y consulta su rol directamente desde MongoDB Atlas
+// POST /api/auth/resend-verification - Reenvía un nuevo código OTP de 6 dígitos al correo
+router.post(
+  '/resend-verification',
+  authLimiter,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { email } = resendVerificationSchema.parse(req.body);
+
+      const user = await User.findOne({ email });
+      if (!user) {
+        res.status(404).json({
+          ok: false,
+          error: 'No existe una cuenta registrada con ese correo electrónico.',
+        });
+        return;
+      }
+
+      if (user.emailVerified && !user.verificationCodeHash) {
+        res.status(400).json({
+          ok: false,
+          error: 'Esta cuenta ya ha sido verificada. Puedes iniciar sesión directamente.',
+        });
+        return;
+      }
+
+      const codigoOtp = generarCodigoOTP();
+      user.verificationCodeHash = hashearCodigoOTP(codigoOtp, email, 'verify');
+      user.verificationCodeExpiresAt = new Date(Date.now() + TIEMPO_EXPIRACION_OTP_MS);
+      user.verificationAttempts = 0;
+      await user.save();
+
+      const envio = await enviarCorreoVerificacion(user.email, user.fullName, codigoOtp);
+
+      res.status(200).json({
+        ok: true,
+        requiresVerification: true,
+        email: user.email,
+        message: 'Hemos enviado un nuevo código de 6 dígitos a tu correo electrónico.',
+        emailDelivery: {
+          provider: envio.provider,
+          sent: envio.sent,
+        },
+        ...(envio.provider === 'simulation'
+          ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
+          : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/auth/login - Autentica al usuario y verifica que su correo esté confirmado
 router.post(
   '/login',
   authLimiter,
@@ -99,23 +316,247 @@ router.post(
         return;
       }
 
+      // Si la cuenta tiene verificación pendiente, genera nuevo código y solicita confirmación
+      if (user.emailVerified === false && user.verificationCodeHash) {
+        const codigoOtp = generarCodigoOTP();
+        user.verificationCodeHash = hashearCodigoOTP(codigoOtp, email, 'verify');
+        user.verificationCodeExpiresAt = new Date(Date.now() + TIEMPO_EXPIRACION_OTP_MS);
+        user.verificationAttempts = 0;
+        await user.save();
+
+        const envio = await enviarCorreoVerificacion(user.email, user.fullName, codigoOtp);
+
+        res.status(200).json({
+          ok: false,
+          requiresVerification: true,
+          email: user.email,
+          error:
+            'Tu cuenta aún no ha sido verificada. Te hemos enviado un código de 6 dígitos a tu correo.',
+          emailDelivery: {
+            provider: envio.provider,
+            sent: envio.sent,
+          },
+          ...(envio.provider === 'simulation'
+            ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
+            : {}),
+        });
+        return;
+      }
+
+      // Si era una cuenta histórica creada antes del sistema OTP, la marca como verificada
+      if (!user.emailVerified) {
+        user.emailVerified = true;
+        await user.save();
+      }
+
       const rolActual = obtenerRolUsuario(user);
       const token = firmarToken(String(user._id), user.email, rolActual);
 
       res.status(200).json({
         ok: true,
         message: '¡Bienvenido de vuelta!',
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          role: rolActual,
-          roles: obtenerArregloRoles(user),
-          createdAt: user.createdAt,
-        },
+        user: serializarUsuario(user),
         token,
       });
     } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/auth/forgot-password - Genera y envía código OTP de 6 dígitos para recuperar contraseña
+router.post(
+  '/forgot-password',
+  authLimiter,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { email } = forgotPasswordSchema.parse(req.body);
+
+      const user = await User.findOne({ email });
+      if (!user) {
+        res.status(404).json({
+          ok: false,
+          error: 'No encontramos ninguna cuenta registrada con ese correo electrónico.',
+        });
+        return;
+      }
+
+      const codigoOtp = generarCodigoOTP();
+      user.resetPasswordCodeHash = hashearCodigoOTP(codigoOtp, email, 'reset');
+      user.resetPasswordExpiresAt = new Date(Date.now() + TIEMPO_EXPIRACION_OTP_MS);
+      user.resetPasswordAttempts = 0;
+      await user.save();
+
+      const envio = await enviarCorreoRecuperacion(user.email, user.fullName, codigoOtp);
+
+      res.status(200).json({
+        ok: true,
+        email: user.email,
+        message:
+          'Te hemos enviado un código de 6 dígitos a tu correo para restablecer tu contraseña.',
+        emailDelivery: {
+          provider: envio.provider,
+          sent: envio.sent,
+        },
+        ...(envio.provider === 'simulation'
+          ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
+          : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/auth/reset-password - Valida el código OTP de 6 dígitos y actualiza la contraseña
+router.post(
+  '/reset-password',
+  authLimiter,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { email, code, newPassword } = resetPasswordSchema.parse(req.body);
+
+      const user = await User.findOne({ email });
+      if (!user || !user.resetPasswordCodeHash) {
+        res.status(400).json({
+          ok: false,
+          error: 'No hay una solicitud de recuperación activa para este correo.',
+        });
+        return;
+      }
+
+      if ((user.resetPasswordAttempts ?? 0) >= MAX_INTENTOS_OTP) {
+        res.status(429).json({
+          ok: false,
+          error:
+            'Has superado el máximo de intentos permitidos. Solicita un nuevo código de recuperación.',
+        });
+        return;
+      }
+
+      if (
+        !user.resetPasswordExpiresAt ||
+        user.resetPasswordExpiresAt.getTime() < Date.now()
+      ) {
+        res.status(400).json({
+          ok: false,
+          error: 'El código de recuperación ha expirado. Solicita uno nuevo.',
+        });
+        return;
+      }
+
+      const esValido = verificarCodigoOTP(code, email, 'reset', user.resetPasswordCodeHash);
+      if (!esValido) {
+        user.resetPasswordAttempts = (user.resetPasswordAttempts ?? 0) + 1;
+        await user.save();
+        const restantes = Math.max(0, MAX_INTENTOS_OTP - user.resetPasswordAttempts);
+        res.status(400).json({
+          ok: false,
+          error: `El código ingresado es incorrecto. Te quedan ${restantes} intento(s).`,
+        });
+        return;
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(newPassword, salt);
+      user.emailVerified = true;
+      user.verificationCodeHash = null;
+      user.verificationCodeExpiresAt = null;
+      user.verificationAttempts = 0;
+      user.resetPasswordCodeHash = null;
+      user.resetPasswordExpiresAt = null;
+      user.resetPasswordAttempts = 0;
+      await user.save();
+
+      await enviarCorreoConfirmacionContrasena(user.email, user.fullName);
+
+      const rolActual = obtenerRolUsuario(user);
+      const token = firmarToken(String(user._id), user.email, rolActual);
+
+      res.status(200).json({
+        ok: true,
+        message: '¡Tu contraseña ha sido restablecida con éxito!',
+        user: serializarUsuario(user),
+        token,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/auth/oauth - Inicio de sesión y registro con cuenta de Google o Apple
+router.post(
+  '/oauth',
+  authLimiter,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { provider, idToken, accessToken, email, fullName } = oauthLoginSchema.parse(req.body);
+
+      const perfil =
+        provider === 'google'
+          ? await verificarTokenGoogle({
+              idToken,
+              accessToken,
+              emailFallback: email,
+              fullNameFallback: fullName,
+            })
+          : await verificarTokenApple({
+              idToken,
+              emailFallback: email,
+              fullNameFallback: fullName,
+            });
+
+      let user = await User.findOne({ email: perfil.email });
+
+      if (!user) {
+        const claveAleatoria = crypto.randomBytes(32).toString('hex');
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(claveAleatoria, salt);
+
+        user = await User.create({
+          fullName: perfil.fullName,
+          email: perfil.email,
+          password: hashedPassword,
+          role: 'user',
+          roles: ['user'],
+          authProvider: perfil.provider,
+          googleId: perfil.provider === 'google' ? perfil.providerUserId : null,
+          appleId: perfil.provider === 'apple' ? perfil.providerUserId : null,
+          emailVerified: true,
+        });
+      } else {
+        if (perfil.provider === 'google' && !user.googleId) {
+          user.googleId = perfil.providerUserId;
+        }
+        if (perfil.provider === 'apple' && !user.appleId) {
+          user.appleId = perfil.providerUserId;
+        }
+        user.emailVerified = true;
+        user.verificationCodeHash = null;
+        user.verificationCodeExpiresAt = null;
+        await user.save();
+      }
+
+      const rolActual = obtenerRolUsuario(user);
+      const token = firmarToken(String(user._id), user.email, rolActual);
+
+      res.status(200).json({
+        ok: true,
+        message: `¡Sesión iniciada con ${
+          perfil.provider === 'google' ? 'Google' : 'Apple'
+        }!`,
+        user: serializarUsuario(user),
+        token,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(401).json({
+          ok: false,
+          error: error.message,
+        });
+        return;
+      }
       next(error);
     }
   }
@@ -147,18 +588,9 @@ router.get(
         return;
       }
 
-      const rolActual = obtenerRolUsuario(user);
-
       res.status(200).json({
         ok: true,
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          role: rolActual,
-          roles: obtenerArregloRoles(user),
-          createdAt: user.createdAt,
-        },
+        user: serializarUsuario(user),
       });
     } catch (error) {
       next(error);
@@ -183,14 +615,7 @@ router.get(
 
       res.status(200).json({
         ok: true,
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          role: rolActual,
-          roles: obtenerArregloRoles(user),
-          createdAt: user.createdAt,
-        },
+        user: serializarUsuario(user),
         token: nuevoTokenFirmado,
       });
     } catch (error) {

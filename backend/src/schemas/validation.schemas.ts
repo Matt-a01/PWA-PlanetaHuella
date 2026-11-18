@@ -88,6 +88,50 @@ export const loginSchema = z.object({
     .max(128, 'Contraseña inválida.'),
 });
 
+const emailCampoSchema = z
+  .string({ error: 'El correo electrónico es obligatorio.' })
+  .trim()
+  .toLowerCase()
+  .email('Ingresa un correo electrónico válido.')
+  .max(160, 'El correo electrónico no puede superar 160 caracteres.');
+
+const codigoOtpSchema = z
+  .string({ error: 'El código de verificación es obligatorio.' })
+  .trim()
+  .regex(/^\d{6}$/, 'El código debe contener exactamente 6 dígitos numéricos.');
+
+export const verifyEmailSchema = z.object({
+  email: emailCampoSchema,
+  code: codigoOtpSchema,
+});
+
+export const resendVerificationSchema = z.object({
+  email: emailCampoSchema,
+});
+
+export const forgotPasswordSchema = z.object({
+  email: emailCampoSchema,
+});
+
+export const resetPasswordSchema = z.object({
+  email: emailCampoSchema,
+  code: codigoOtpSchema,
+  newPassword: z
+    .string({ error: 'La nueva contraseña es obligatoria.' })
+    .min(6, 'La nueva contraseña debe tener al menos 6 caracteres.')
+    .max(128, 'La nueva contraseña no puede superar 128 caracteres.'),
+});
+
+export const oauthLoginSchema = z.object({
+  provider: z.enum(['google', 'apple'], {
+    error: 'El proveedor debe ser google o apple.',
+  }),
+  idToken: z.string().trim().max(8192).optional(),
+  accessToken: z.string().trim().max(4096).optional(),
+  email: emailCampoSchema.optional(),
+  fullName: textoOpcionalSaneado('nombre completo', 100).optional(),
+});
+
 // ==================== MASCOTAS ====================
 
 export const createPetSchema = z.object({
