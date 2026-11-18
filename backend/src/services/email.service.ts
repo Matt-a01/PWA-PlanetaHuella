@@ -8,9 +8,8 @@ export const MAX_INTENTOS_OTP = 5;
 
 export interface ResultadoEnvioCorreo {
   sent: boolean;
-  provider: 'brevo' | 'resend' | 'smtp' | 'simulation';
+  provider: 'brevo' | 'resend' | 'smtp';
   subject: string;
-  previewHtml?: string;
 }
 
 // Genera un código numérico aleatorio de 6 dígitos criptográficamente seguro (CSPRNG)
@@ -136,18 +135,70 @@ export const construirPlantillaCorreoHTML = (opciones: OpcionesPlantilla): strin
 
 // ==================== CANALES DE TRANSPORTE ====================
 
+// Soporta formatos: "Planeta Huella <correo@gmail.com>", "Planeta Huella correo@gmail.com" o "correo@gmail.com"
 const extraerRemitente = (fromRaw: string): { name: string; email: string } => {
-  const match = fromRaw.match(/^(.*?)<(.+?)>$/);
-  if (match) {
+  const limpio = (fromRaw || '').trim();
+  const matchAngulos = limpio.match(/^(.*?)<([^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)>$/);
+  if (matchAngulos) {
     return {
-      name: (match[1] ?? '').trim() || 'Planeta Huella',
-      email: (match[2] ?? '').trim(),
+      name: (matchAngulos[1] ?? '').trim().replace(/^["']+|["']+$/g, '') || 'Planeta Huella',
+      email: (matchAngulos[2] ?? '').trim().toLowerCase(),
     };
   }
+
+  const matchCorreo = limpio.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+  if (matchCorreo && matchCorreo[1]) {
+    const emailExtraido = matchCorreo[1].trim().toLowerCase();
+    const nombreRestante = limpio
+      .replace(matchCorreo[1], '')
+      .replace(/[<>"]/g, '')
+      .trim();
+    return {
+      name: nombreRestante || 'Planeta Huella',
+      email: emailExtraido,
+    };
+  }
+
   return {
     name: 'Planeta Huella',
-    email: fromRaw.trim() || 'no-reply@planetahuella.app',
+    email: 'planeta.huella1@gmail.com',
   };
+};
+
+interface BrevoSendersResponse {
+  senders?: Array<{
+    name?: string;
+    email?: string;
+    active?: boolean;
+  }>;
+}
+
+const obtenerRemitenteVerificadoBrevo = async (): Promise<{
+  name: string;
+  email: string;
+} | null> => {
+  try {
+    const res = await fetch('https://api.brevo.com/v3/senders', {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        'api-key': env.BREVO_API_KEY,
+      },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as BrevoSendersResponse;
+    const remitenteActivo =
+      data.senders?.find((s) => s.active && s.email) || data.senders?.find((s) => s.email);
+    if (remitenteActivo?.email) {
+      return {
+        name: remitenteActivo.name || 'Planeta Huella',
+        email: remitenteActivo.email.trim().toLowerCase(),
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 };
 
 // Canal 1: Envío HTTPS vía API de Brevo (compatible con Render Free Tier)
@@ -155,24 +206,49 @@ const enviarPorBrevoAPI = async (
   paraEmail: string,
   asunto: string,
   html: string
-): Promise<boolean> => {
-  if (!env.BREVO_API_KEY) return false;
-  const remitente = extraerRemitente(env.EMAIL_FROM);
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      'api-key': env.BREVO_API_KEY,
-    },
-    body: JSON.stringify({
-      sender: remitente,
-      to: [{ email: paraEmail }],
-      subject: asunto,
-      htmlContent: html,
-    }),
-  });
-  return res.ok;
+): Promise<void> => {
+  let remitente = extraerRemitente(env.EMAIL_FROM);
+
+  if (remitente.email === 'no-reply@planetahuella.app') {
+    const verificado = await obtenerRemitenteVerificadoBrevo();
+    if (verificado) {
+      remitente = verificado;
+    }
+  }
+
+  const enviarPeticion = async (senderUsado: { name: string; email: string }) =>
+    fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'api-key': env.BREVO_API_KEY,
+      },
+      body: JSON.stringify({
+        sender: senderUsado,
+        to: [{ email: paraEmail }],
+        subject: asunto,
+        htmlContent: html,
+      }),
+    });
+
+  let res = await enviarPeticion(remitente);
+
+  // Si el remitente configurado no coincide con el verificado en Brevo, consulta el remitente oficial y reintenta
+  if (!res.ok) {
+    const verificado = await obtenerRemitenteVerificadoBrevo();
+    if (verificado && verificado.email !== remitente.email) {
+      res = await enviarPeticion(verificado);
+    }
+  }
+
+  if (!res.ok) {
+    const detalle = await res.text().catch(() => '');
+    console.error('❌ Error al enviar correo con Brevo API:', res.status, detalle);
+    throw new Error(
+      'No se pudo enviar el correo de verificación a través de Brevo. Verifica tu BREVO_API_KEY y que el correo remitente (EMAIL_FROM) esté verificado en Brevo.'
+    );
+  }
 };
 
 // Canal 2: Envío HTTPS vía API de Resend (compatible con Render Free Tier)
@@ -180,8 +256,8 @@ const enviarPorResendAPI = async (
   paraEmail: string,
   asunto: string,
   html: string
-): Promise<boolean> => {
-  if (!env.RESEND_API_KEY) return false;
+): Promise<void> => {
+  const remitente = extraerRemitente(env.EMAIL_FROM);
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -189,13 +265,18 @@ const enviarPorResendAPI = async (
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: env.EMAIL_FROM,
+      from: `${remitente.name} <${remitente.email}>`,
       to: [paraEmail],
       subject: asunto,
       html,
     }),
   });
-  return res.ok;
+
+  if (!res.ok) {
+    const detalle = await res.text().catch(() => '');
+    console.error('❌ Error al enviar correo con Resend API:', res.status, detalle);
+    throw new Error('No se pudo enviar el correo a través de Resend.');
+  }
 };
 
 // Canal 3: Cliente SMTP nativo sobre TLS directo (puerto 465) o socket estándar
@@ -203,11 +284,12 @@ const enviarPorSmtpNativo = async (
   paraEmail: string,
   asunto: string,
   html: string
-): Promise<boolean> => {
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) return false;
-
+): Promise<void> => {
   const remitente = extraerRemitente(env.EMAIL_FROM);
-  const emailOrigen = remitente.email.includes('@') ? remitente.email : env.SMTP_USER;
+  const emailOrigen =
+    remitente.email && remitente.email !== 'no-reply@planetahuella.app'
+      ? remitente.email
+      : env.SMTP_USER;
   const asuntoBase64 = Buffer.from(asunto, 'utf8').toString('base64');
   const cuerpoBase64 = Buffer.from(html, 'utf8')
     .toString('base64')
@@ -226,18 +308,18 @@ const enviarPorSmtpNativo = async (
     '',
   ].join('\r\n');
 
-  return new Promise<boolean>((resolve) => {
+  const enviado = await new Promise<boolean>((resolve) => {
     const usarTlsDirecto = env.SMTP_PORT === 465;
     const socket = usarTlsDirecto
       ? tls.connect({
-        host: env.SMTP_HOST,
-        port: env.SMTP_PORT,
-        servername: env.SMTP_HOST,
-      })
+          host: env.SMTP_HOST,
+          port: env.SMTP_PORT,
+          servername: env.SMTP_HOST,
+        })
       : net.createConnection({
-        host: env.SMTP_HOST,
-        port: env.SMTP_PORT,
-      });
+          host: env.SMTP_HOST,
+          port: env.SMTP_PORT,
+        });
 
     socket.setTimeout(10000);
 
@@ -271,7 +353,6 @@ const enviarPorSmtpNativo = async (
     socket.on('data', (chunk: Buffer) => {
       bufferRespuesta += chunk.toString('utf8');
       const lineas = bufferRespuesta.split('\r\n');
-      // Espera hasta que la respuesta multilínea SMTP termine (código seguido de espacio)
       const ultimaLineaCompleta = lineas[lineas.length - 2] ?? '';
       if (!/^\d{3} /.test(ultimaLineaCompleta)) return;
 
@@ -296,44 +377,35 @@ const enviarPorSmtpNativo = async (
     socket.on('timeout', () => cerrarConResultado(false));
     socket.on('error', () => cerrarConResultado(false));
   });
+
+  if (!enviado) {
+    throw new Error('No se pudo enviar el correo mediante el servidor SMTP configurado.');
+  }
 };
 
 const despacharCorreo = async (
   paraEmail: string,
   asunto: string,
-  html: string,
-  codigoLog?: string
+  html: string
 ): Promise<ResultadoEnvioCorreo> => {
-  try {
-    if (env.BREVO_API_KEY) {
-      const enviado = await enviarPorBrevoAPI(paraEmail, asunto, html);
-      if (enviado) return { sent: true, provider: 'brevo', subject: asunto };
-    }
-
-    if (env.RESEND_API_KEY) {
-      const enviado = await enviarPorResendAPI(paraEmail, asunto, html);
-      if (enviado) return { sent: true, provider: 'resend', subject: asunto };
-    }
-
-    if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
-      const enviado = await enviarPorSmtpNativo(paraEmail, asunto, html);
-      if (enviado) return { sent: true, provider: 'smtp', subject: asunto };
-    }
-  } catch (err) {
-    console.warn('⚠️ Error al enviar correo mediante proveedor externo, usando modo simulación:', err);
+  if (env.BREVO_API_KEY) {
+    await enviarPorBrevoAPI(paraEmail, asunto, html);
+    return { sent: true, provider: 'brevo', subject: asunto };
   }
 
-  console.info(
-    `📧 [Modo Simulación de Correo] Para: ${paraEmail} | Asunto: ${asunto}${codigoLog ? ` | Código OTP: ${codigoLog}` : ''
-    }`
-  );
+  if (env.RESEND_API_KEY) {
+    await enviarPorResendAPI(paraEmail, asunto, html);
+    return { sent: true, provider: 'resend', subject: asunto };
+  }
 
-  return {
-    sent: true,
-    provider: 'simulation',
-    subject: asunto,
-    previewHtml: html,
-  };
+  if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
+    await enviarPorSmtpNativo(paraEmail, asunto, html);
+    return { sent: true, provider: 'smtp', subject: asunto };
+  }
+
+  throw new Error(
+    'El servicio de correo electrónico no está configurado en el servidor (configura BREVO_API_KEY, RESEND_API_KEY o SMTP en las variables de entorno).'
+  );
 };
 
 // ==================== FUNCIONES PÚBLICAS DE CORREO ====================
@@ -357,7 +429,7 @@ export const enviarCorreoVerificacion = async (
       'Si no creaste una cuenta en Planeta Huella, puedes ignorar este mensaje de forma segura. Nunca compartas este código con nadie.',
   });
 
-  return despacharCorreo(email, asunto, html, codigoOtp);
+  return despacharCorreo(email, asunto, html);
 };
 
 export const enviarCorreoRecuperacion = async (
@@ -379,7 +451,7 @@ export const enviarCorreoRecuperacion = async (
       'Si tú no solicitaste restablecer tu contraseña, tu cuenta sigue protegida. No compartas este código con terceros.',
   });
 
-  return despacharCorreo(email, asunto, html, codigoOtp);
+  return despacharCorreo(email, asunto, html);
 };
 
 export const enviarCorreoConfirmacionContrasena = async (

@@ -73,7 +73,7 @@ router.post(
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
-        // Si la cuenta ya existía pero nunca verificó su correo, permite reintentar registro y reenviar OTP
+        // Si la cuenta ya existía pero nunca verificó su correo, actualiza datos y reenvía OTP real
         if (!existingUser.emailVerified && existingUser.verificationCodeHash) {
           const salt = await bcrypt.genSalt(10);
           existingUser.fullName = fullName;
@@ -97,9 +97,6 @@ router.post(
               provider: envio.provider,
               sent: envio.sent,
             },
-            ...(envio.provider === 'simulation'
-              ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
-              : {}),
           });
           return;
         }
@@ -143,9 +140,6 @@ router.post(
           provider: envio.provider,
           sent: envio.sent,
         },
-        ...(envio.provider === 'simulation'
-          ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
-          : {}),
       });
     } catch (error) {
       next(error);
@@ -277,9 +271,6 @@ router.post(
           provider: envio.provider,
           sent: envio.sent,
         },
-        ...(envio.provider === 'simulation'
-          ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
-          : {}),
       });
     } catch (error) {
       next(error);
@@ -333,9 +324,6 @@ router.post(
             provider: envio.provider,
             sent: envio.sent,
           },
-          ...(envio.provider === 'simulation'
-            ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
-            : {}),
         });
         return;
       }
@@ -395,9 +383,6 @@ router.post(
           provider: envio.provider,
           sent: envio.sent,
         },
-        ...(envio.provider === 'simulation'
-          ? { devCode: codigoOtp, devEmailHtml: envio.previewHtml }
-          : {}),
       });
     } catch (error) {
       next(error);
@@ -482,19 +467,17 @@ router.post(
   }
 );
 
-// POST /api/auth/oauth - Inicio de sesión y registro con cuenta de Google
+// POST /api/auth/oauth - Inicio de sesión y registro con cuenta oficial de Google
 router.post(
   '/oauth',
   authLimiter,
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { idToken, accessToken, email, fullName } = oauthLoginSchema.parse(req.body);
+      const { idToken, accessToken } = oauthLoginSchema.parse(req.body);
 
       const perfil = await verificarTokenGoogle({
         idToken,
         accessToken,
-        emailFallback: email,
-        fullNameFallback: fullName,
       });
 
       let user = await User.findOne({ email: perfil.email });

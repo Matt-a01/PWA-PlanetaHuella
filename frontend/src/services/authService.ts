@@ -20,19 +20,15 @@ export interface AuthResponse {
   requiresVerification?: boolean;
   email?: string;
   emailDelivery?: {
-    provider: 'brevo' | 'resend' | 'smtp' | 'simulation';
+    provider: 'brevo' | 'resend' | 'smtp';
     sent: boolean;
   };
-  devCode?: string;
-  devEmailHtml?: string;
 }
 
 export interface OAuthLoginPayload {
   provider: 'google';
   idToken?: string;
   accessToken?: string;
-  email?: string;
-  fullName?: string;
 }
 
 const MENSAJE_SIN_CONEXION =
