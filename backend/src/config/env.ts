@@ -43,6 +43,16 @@ const envSchema = z.object({
     .default(
       'http://localhost:5173,http://localhost:4173,https://planeta-huella-frontend.onrender.com,https://planeta-huella-frontend-lsf3.onrender.com'
     ),
+  EMAIL_FROM: z
+    .preprocess(limpiarValorEnv, z.string().optional())
+    .default('Planeta Huella <no-reply@planetahuella.app>'),
+  SMTP_HOST: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
+  SMTP_PORT: z.coerce.number().int().positive().default(465),
+  SMTP_USER: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
+  SMTP_PASS: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
+  RESEND_API_KEY: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
+  BREVO_API_KEY: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
+  GOOGLE_CLIENT_ID: z.preprocess(limpiarValorEnv, z.string().optional()).default(''),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
