@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 
 export interface PerfilOAuthVerificado {
@@ -25,12 +24,10 @@ interface GoogleUserInfoResponse {
   given_name?: string;
 }
 
-// Verifica un idToken o accessToken emitido por Google Identity Services
+// Verifica un idToken o accessToken oficial emitido por Google Identity Services
 export const verificarTokenGoogle = async (opciones: {
   idToken?: string | undefined;
   accessToken?: string | undefined;
-  emailFallback?: string | undefined;
-  fullNameFallback?: string | undefined;
 }): Promise<PerfilOAuthVerificado> => {
   if (opciones.idToken) {
     const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(
@@ -42,7 +39,11 @@ export const verificarTokenGoogle = async (opciones: {
     }
     const info = (await res.json()) as GoogleTokenInfoResponse;
 
-    if (env.GOOGLE_CLIENT_ID && info.aud !== env.GOOGLE_CLIENT_ID) {
+    if (
+      env.GOOGLE_CLIENT_ID &&
+      env.GOOGLE_CLIENT_ID.endsWith('.apps.googleusercontent.com') &&
+      info.aud !== env.GOOGLE_CLIENT_ID
+    ) {
       throw new Error('El token de Google no corresponde a este Client ID.');
     }
 
@@ -81,26 +82,5 @@ export const verificarTokenGoogle = async (opciones: {
     };
   }
 
-  // Si GOOGLE_CLIENT_ID está forzado en el servidor, exige token real de Google
-  if (env.GOOGLE_CLIENT_ID) {
-    throw new Error('Se requiere el token oficial de Google Identity Services.');
-  }
-
-  if (!opciones.emailFallback) {
-    throw new Error('Ingresa el correo de tu cuenta de Google para continuar.');
-  }
-
-  const emailLimpio = opciones.emailFallback.trim().toLowerCase();
-  const idDeterminista = crypto
-    .createHash('sha256')
-    .update(`google:${emailLimpio}`)
-    .digest('hex')
-    .slice(0, 24);
-
-  return {
-    provider: 'google',
-    providerUserId: `google_${idDeterminista}`,
-    email: emailLimpio,
-    fullName: (opciones.fullNameFallback || emailLimpio.split('@')[0] || 'Usuario Google').trim(),
-  };
+  throw new Error('Se requiere autenticar con tu cuenta oficial de Google.');
 };

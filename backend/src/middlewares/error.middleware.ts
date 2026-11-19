@@ -8,6 +8,7 @@ interface HttpLikeError extends Error {
   statusCode?: number;
   type?: string;
   code?: number;
+  expose?: boolean;
 }
 
 // Manejador centralizado de errores sin filtrar trazas internas (stack traces) en producción
@@ -78,7 +79,16 @@ export const errorMiddleware = (
     return;
   }
 
-  // 7. Errores inesperados (500) sin exponer stack traces al cliente
+  // 7. Errores operativos controlados (ej. fallo de proveedor de correo externo Brevo/SMTP)
+  if (httpErr?.expose && err instanceof Error) {
+    res.status(httpErr.status ?? httpErr.statusCode ?? 502).json({
+      ok: false,
+      error: err.message,
+    });
+    return;
+  }
+
+  // 8. Errores inesperados (500) sin exponer stack traces al cliente
   if (env.NODE_ENV !== 'test') {
     console.error(
       'Error interno no controlado:',

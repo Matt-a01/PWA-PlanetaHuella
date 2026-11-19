@@ -22,7 +22,6 @@ import {
   ArrowLeft,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import {
   loginUser,
@@ -34,7 +33,6 @@ import {
   oauthLogin,
 } from '../services/authService';
 import { useAuthStore } from '../store/useAuthStore';
-import ModalVentana from '../components/ModalVentana';
 import heroImg from '../assets/landing-hero.jpg';
 
 type AuthViewMode =
@@ -63,6 +61,9 @@ declare global {
     };
   }
 }
+
+const DEFAULT_GOOGLE_CLIENT_ID =
+  '727410282131-njdspmgalr5vkv05agtib201rfu6a4ee.apps.googleusercontent.com';
 
 const cargarScriptExterno = (src: string, id: string): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -118,16 +119,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [cooldownSegundos, setCooldownSegundos] = useState(0);
 
-  // Previsualización de correo cuando el servidor opera en modo simulación sin SMTP
-  const [devOtpPreview, setDevOtpPreview] = useState<string | null>(null);
-  const [devEmailHtml, setDevEmailHtml] = useState<string | null>(null);
-  const [modalCorreoAbierto, setModalCorreoAbierto] = useState(false);
-
-  // Modal de inicio de sesión social (Google)
-  const [modalGoogleAbierto, setModalGoogleAbierto] = useState(false);
-  const [oauthEmail, setOauthEmail] = useState('');
-  const [oauthNombre, setOauthNombre] = useState('');
-
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -154,10 +145,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
   const switchMode = (newMode: AuthViewMode) => {
     setMode(newMode);
     limpiarMensajes();
-    if (newMode === 'login' || newMode === 'register') {
-      setDevOtpPreview(null);
-      setDevEmailHtml(null);
-    }
   };
 
   const manejarCambioDigitoOtp = (index: number, valorRaw: string) => {
@@ -188,12 +175,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
     setOtpDigits(nuevos);
     const focoIdx = Math.min(pegado.length, 5);
     otpRefs.current[focoIdx]?.focus();
-  };
-
-  const autocompletarCodigoDemo = (codigo: string) => {
-    const limpio = codigo.replace(/\D/g, '').slice(0, 6);
-    if (limpio.length !== 6) return;
-    setOtpDigits(limpio.split(''));
   };
 
   // ==================== ENVÍO DE LOGIN Y REGISTRO ====================
@@ -235,8 +216,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
       if (response.requiresVerification) {
         reiniciarOtp();
         setCooldownSegundos(60);
-        setDevOtpPreview(response.devCode ?? null);
-        setDevEmailHtml(response.devEmailHtml ?? null);
         setMode('verify-email');
         setInfoMessage(
           response.message ||
@@ -304,8 +283,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
       if (res.ok) {
         reiniciarOtp();
         setCooldownSegundos(60);
-        setDevOtpPreview(res.devCode ?? null);
-        setDevEmailHtml(res.devEmailHtml ?? null);
         setSuccessMessage(
           res.message || 'Hemos enviado un nuevo código de 6 dígitos a tu correo.'
         );
@@ -340,8 +317,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
         setPassword('');
         setConfirmPassword('');
         setCooldownSegundos(60);
-        setDevOtpPreview(res.devCode ?? null);
-        setDevEmailHtml(res.devEmailHtml ?? null);
         setMode('reset-password');
         setInfoMessage(
           res.message ||
@@ -404,16 +379,9 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
 
   const iniciarOAuthConGoogle = async () => {
     limpiarMensajes();
-    const googleClientId = (
-      (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? ''
-    ).trim();
-
-    if (!googleClientId) {
-      setOauthEmail(email);
-      setOauthNombre(fullName);
-      setModalGoogleAbierto(true);
-      return;
-    }
+    const googleClientId =
+      ((import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? '').trim() ||
+      DEFAULT_GOOGLE_CLIENT_ID;
 
     setLoading(true);
     try {
@@ -465,40 +433,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
       setErrorMessage(
         err instanceof Error ? err.message : 'No se pudo abrir Google Sign-In.'
       );
-    }
-  };
-
-  const confirmarModalOAuthAsistido = async (e: FormEvent) => {
-    e.preventDefault();
-
-    const correoLimpio = oauthEmail.trim().toLowerCase();
-    if (!correoLimpio || !correoLimpio.includes('@')) {
-      setErrorMessage('Ingresa un correo electrónico válido de tu cuenta de Google.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await oauthLogin({
-        provider: 'google',
-        email: correoLimpio,
-        fullName: oauthNombre.trim() || undefined,
-      });
-
-      if (res.ok && res.user && res.token) {
-        setModalGoogleAbierto(false);
-        setSuccessMessage('¡Sesión iniciada con Google!');
-        setAuth(res.user, res.token);
-        setTimeout(() => navigate('/inicio', { replace: true }), 350);
-      } else {
-        setErrorMessage(res.error || 'No se pudo iniciar sesión con Google.');
-      }
-    } catch (err) {
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Error al vincular la cuenta de Google.'
-      );
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -763,7 +697,8 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">
                   Enviamos un código de 6 dígitos a{' '}
-                  <span className="font-semibold text-gray-800">{email}</span>
+                  <span className="font-semibold text-gray-800">{email}</span>. Revisa
+                  tu bandeja de entrada o spam.
                 </p>
               </div>
 
@@ -787,38 +722,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
                   />
                 ))}
               </div>
-
-              {/* Previsualización en Modo Desarrollo cuando aún no hay SMTP configurado */}
-              {devOtpPreview && (
-                <div className="p-3 bg-emerald-50/90 border border-emerald-200 rounded-2xl text-xs text-emerald-900 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold inline-flex items-center gap-1 text-emerald-800">
-                      <Sparkles size={14} /> Código generado (Modo Pruebas):
-                    </span>
-                    <span className="font-mono font-extrabold text-sm tracking-widest bg-white px-2.5 py-0.5 rounded-lg border border-emerald-200">
-                      {devOtpPreview}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => autocompletarCodigoDemo(devOtpPreview)}
-                      className="flex-1 py-1.5 px-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold text-[11px] transition-colors cursor-pointer"
-                    >
-                      Autocompletar código
-                    </button>
-                    {devEmailHtml && (
-                      <button
-                        type="button"
-                        onClick={() => setModalCorreoAbierto(true)}
-                        className="flex-1 py-1.5 px-2.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-semibold text-[11px] transition-colors cursor-pointer"
-                      >
-                        Ver diseño del correo
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
 
               <button
                 type="submit"
@@ -937,37 +840,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
                 ))}
               </div>
 
-              {devOtpPreview && (
-                <div className="p-3 bg-emerald-50/90 border border-emerald-200 rounded-2xl text-xs text-emerald-900 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold inline-flex items-center gap-1 text-emerald-800">
-                      <Sparkles size={14} /> Código de recuperación:
-                    </span>
-                    <span className="font-mono font-extrabold text-sm tracking-widest bg-white px-2.5 py-0.5 rounded-lg border border-emerald-200">
-                      {devOtpPreview}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => autocompletarCodigoDemo(devOtpPreview)}
-                      className="flex-1 py-1.5 px-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold text-[11px] transition-colors cursor-pointer"
-                    >
-                      Autocompletar código
-                    </button>
-                    {devEmailHtml && (
-                      <button
-                        type="button"
-                        onClick={() => setModalCorreoAbierto(true)}
-                        className="flex-1 py-1.5 px-2.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-semibold text-[11px] transition-colors cursor-pointer"
-                      >
-                        Ver diseño del correo
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3.5 text-gray-400" size={18} />
                 <input
@@ -1040,86 +912,6 @@ export default function Auth({ initialMode = 'login' }: AuthProps) {
           </p>
         </div>
       </div>
-
-      {/* Modal para inicio de sesión con cuenta Google cuando no hay VITE_GOOGLE_CLIENT_ID configurado en .env */}
-      <ModalVentana
-        abierto={modalGoogleAbierto}
-        onCerrar={() => setModalGoogleAbierto(false)}
-        titulo="Continuar con Google"
-        subtitulo="Selecciona o ingresa la cuenta de Google que deseas vincular a Planeta Huella"
-      >
-        <form onSubmit={confirmarModalOAuthAsistido} className="space-y-3.5">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              Correo de tu cuenta Google
-            </label>
-            <input
-              type="email"
-              required
-              value={oauthEmail}
-              onChange={(e) => setOauthEmail(e.target.value)}
-              placeholder="tucorreo@gmail.com"
-              className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-green-600 focus:bg-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              Nombre para mostrar (opcional)
-            </label>
-            <input
-              type="text"
-              value={oauthNombre}
-              onChange={(e) => setOauthNombre(e.target.value)}
-              placeholder="Ej. Ana García"
-              className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-green-600 focus:bg-white"
-            />
-          </div>
-
-          <div className="flex gap-2.5 pt-2">
-            <button
-              type="button"
-              onClick={() => setModalGoogleAbierto(false)}
-              className="flex-1 py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-2.5 px-4 bg-green-700 hover:bg-green-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer disabled:opacity-60"
-            >
-              {loading ? 'Conectando...' : 'Continuar con esta cuenta'}
-            </button>
-          </div>
-        </form>
-      </ModalVentana>
-
-      {/* Modal de previsualización del diseño HTML del correo enviado */}
-      <ModalVentana
-        abierto={modalCorreoAbierto && Boolean(devEmailHtml)}
-        onCerrar={() => setModalCorreoAbierto(false)}
-        titulo="Diseño del Correo Electrónico"
-        subtitulo="Vista previa real de la plantilla HTML enviada al usuario"
-        maxWidthClass="max-w-lg"
-      >
-        <div className="space-y-3">
-          <div className="rounded-2xl overflow-hidden border border-gray-200 bg-gray-50">
-            <iframe
-              title="Vista previa del correo electrónico"
-              srcDoc={devEmailHtml ?? ''}
-              className="w-full h-96 border-0"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => setModalCorreoAbierto(false)}
-            className="w-full py-2.5 bg-green-700 hover:bg-green-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-          >
-            Cerrar vista previa
-          </button>
-        </div>
-      </ModalVentana>
     </div>
   );
 }

@@ -69,6 +69,13 @@ app.get('/api/health', (_req, res) => {
     ok: conectado,
     status: conectado ? 'online' : 'degraded',
     database: estadosConexion[readyState] ?? 'unknown',
+    emailProvider: env.BREVO_API_KEY
+      ? 'brevo'
+      : env.RESEND_API_KEY
+        ? 'resend'
+        : env.SMTP_HOST
+          ? 'smtp'
+          : 'unconfigured',
     ...(obtenerUltimoErrorDB() ? { dbError: obtenerUltimoErrorDB() } : {}),
     timestamp: new Date().toISOString(),
   });
