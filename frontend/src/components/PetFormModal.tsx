@@ -77,11 +77,15 @@ function FormularioMascotaInterno({
 
   const handleSpeciesChange = (nuevaEspecie: string) => {
     setSpecies(nuevaEspecie);
-    const primeraRaza = catalogRazas.find((r) => {
+    const candidatos = catalogRazas.filter((r) => {
       if (nuevaEspecie === 'Perro') return r.category === 'Perros';
       if (nuevaEspecie === 'Gato') return r.category === 'Gatos';
       return r.category === 'Otros';
     });
+    const coincidenciaDirecta = candidatos.find((r) =>
+      r.name.toLowerCase().includes(nuevaEspecie.toLowerCase().slice(0, 4))
+    );
+    const primeraRaza = coincidenciaDirecta || candidatos[0];
     const nuevaRaza = primeraRaza ? primeraRaza.name : nuevaEspecie;
     setBreed(nuevaRaza);
     if (!mascotaEditar) {
@@ -254,8 +258,17 @@ function FormularioMascotaInterno({
               <option value="Perro">Perro</option>
               <option value="Gato">Gato</option>
               <option value="Conejo">Conejo</option>
-              <option value="Ave">Ave</option>
-              <option value="Otro">Otro animal</option>
+              <option value="Ave">Ave doméstica / Ornamental</option>
+              <option value="Hámster">Hámster / Roedor</option>
+              <option value="Cuyo">Cuyo / Cobaya / Chinchilla</option>
+              <option value="Hurón">Hurón</option>
+              <option value="Tortuga">Tortuga</option>
+              <option value="Reptil">Reptil / Anfibio (Legal)</option>
+              <option value="Pez">Pez / Acuario</option>
+              <option value="Caballo">Caballo / Equino</option>
+              <option value="Granja">Animal de Granja / Traspatio</option>
+              <option value="Exótico">Exótico Legal (UMA / PIMVS)</option>
+              <option value="Otro">Otro animal doméstico</option>
             </select>
           </div>
 
